@@ -1,0 +1,14 @@
+{
+  "name": "qualys-voice-bridge",
+  "version": "1.0.0",
+  "description": "Node.js bridge for voice workflows involving Qualys and AWS services.",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
