@@ -297,7 +297,7 @@ SEARCH_SYMPTOM_PATTERNS = (
     "access denied",
     "error",
 )
-SUPPORTED_REALTIME_VOICES = ("marin", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
+SUPPORTED_REALTIME_VOICES = ("aira", "marin", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
 SEARCHUNIFY_HIGHLIGHT_START = "___su-highlight-start___"
 SEARCHUNIFY_HIGHLIGHT_END = "___su-highlight-end___"
 KNOWLEDGE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
