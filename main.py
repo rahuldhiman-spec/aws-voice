@@ -1886,6 +1886,8 @@ async def demo_search(query: str = "", product_area: str = ""):
 
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])
+@app.api_route("/invoke/incoming-call", methods=["GET", "POST"])
+@app.api_route("/socket/invoke/incoming-call", methods=["GET", "POST"])
 async def handle_incoming_call(request: Request):
     """Return TwiML instructing Twilio to start a Media Stream to `/media-stream`."""
     stream_url = _build_twilio_stream_url(request)
@@ -1903,6 +1905,8 @@ async def handle_incoming_call(request: Request):
 
 
 @app.websocket("/media-stream")
+@app.websocket("/invoke/media-stream")
+@app.websocket("/socket/invoke/media-stream")
 async def handle_media_stream(websocket: WebSocket):
     """Bridge Twilio Media Streams <-> OpenAI Realtime API."""
     await websocket.accept()
