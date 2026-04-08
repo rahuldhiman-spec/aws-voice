@@ -171,6 +171,60 @@ FRUSTRATION_PATTERNS = {
     "high": ("not working", "still not working", "nothing works", "fed up", "frustrated", "urgent", "asap"),
     "medium": ("issue", "problem", "stuck", "again", "same error", "failing", "broken"),
 }
+QUALYS_DOMAIN_HINTS = (
+    "qualys",
+    "scan",
+    "scanner",
+    "cloud agent",
+    "agent",
+    "vmdr",
+    "vulnerability",
+    "qid",
+    "detection",
+    "asset inventory",
+    "asset",
+    "auth record",
+    "authentication",
+    "credential",
+    "tag",
+    "report",
+    "dashboard",
+    "servicenow",
+    "jira",
+    "splunk",
+    "siem",
+    "api",
+    "connector",
+    "integration",
+)
+OFF_TOPIC_PATTERNS = (
+    "weather",
+    "news",
+    "headline",
+    "stock price",
+    "bitcoin",
+    "crypto",
+    "sports",
+    "match score",
+    "movie",
+    "music",
+    "recipe",
+    "travel",
+    "politics",
+    "president",
+    "celebrity",
+    "horoscope",
+    "joke",
+    "funny",
+    "story",
+    "poem",
+    "sing a song",
+    "girlfriend",
+    "boyfriend",
+    "dating",
+    "sex",
+    "romantic",
+)
 SUPPORTED_REALTIME_VOICES = ("alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
 SEARCHUNIFY_HIGHLIGHT_START = "___su-highlight-start___"
 SEARCHUNIFY_HIGHLIGHT_END = "___su-highlight-end___"
@@ -650,6 +704,20 @@ def _detect_frustration(text: str) -> str:
     return "low"
 
 
+def _detect_off_topic(text: str, routed_family: str, integration_targets: list[str]) -> tuple[bool, str]:
+    lowered = text.lower().strip()
+    if not lowered:
+        return False, ""
+    if routed_family != "general" or integration_targets:
+        return False, ""
+    if any(hint in lowered for hint in QUALYS_DOMAIN_HINTS):
+        return False, ""
+    matched = [pattern for pattern in OFF_TOPIC_PATTERNS if pattern in lowered]
+    if matched:
+        return True, f"Detected non-Qualys topic: {matched[0]}"
+    return False, ""
+
+
 def _build_transcription_prompt() -> str:
     return (
         "Phone support call about Qualys. Expect terms like Qualys, VMDR, Cloud Agent, Asset Inventory, "
@@ -676,6 +744,9 @@ class CallState:
     environment: str = ""
     error_text: str = ""
     frustration_level: str = "low"
+    off_topic_detected: bool = False
+    off_topic_reason: str = ""
+    off_topic_turns: int = 0
     last_user_transcript: str = ""
     last_assistant_transcript: str = ""
     user_turns: int = 0
@@ -710,6 +781,16 @@ class CallState:
         frustration = _detect_frustration(self.last_user_transcript)
         if frustration == "high" or (frustration == "medium" and self.frustration_level == "low"):
             self.frustration_level = frustration
+
+        off_topic_detected, off_topic_reason = _detect_off_topic(
+            self.last_user_transcript,
+            self.routed_issue_family,
+            self.integration_targets,
+        )
+        self.off_topic_detected = off_topic_detected
+        self.off_topic_reason = off_topic_reason
+        if off_topic_detected:
+            self.off_topic_turns += 1
 
         if not self.issue_summary:
             self.issue_summary = self.last_user_transcript
@@ -767,6 +848,9 @@ class CallState:
             "environment": self.environment,
             "error_text": self.error_text,
             "frustration_level": self.frustration_level,
+            "off_topic_detected": self.off_topic_detected,
+            "off_topic_reason": self.off_topic_reason,
+            "off_topic_turns": self.off_topic_turns,
             "integration_targets": list(self.integration_targets),
             "confirmed_facts": list(self.confirmed_facts),
             "tried_steps": list(self.tried_steps),
@@ -791,6 +875,8 @@ class CallState:
             details.append(f"Confirmed facts: {'; '.join(self.confirmed_facts[-3:])}")
         if self.tried_steps:
             details.append(f"Tried steps: {'; '.join(self.tried_steps[-3:])}")
+        if self.off_topic_detected and self.off_topic_reason:
+            details.append(f"Guardrail note: {self.off_topic_reason}")
         details.append(f"Frustration level: {self.frustration_level}")
         return " ".join(details)
 
@@ -901,7 +987,7 @@ def _build_system_message() -> str:
         f"You are {ASSISTANT_NAME}, a clearly disclosed AI voice assistant for {SUPPORT_PRODUCT} support.",
         (
             "Your voice should feel warm, confident, feminine, polished, and natural. "
-            "You may sound slightly playful or charming, but always remain enterprise-safe, respectful, and professional. "
+            "Always remain enterprise-safe, respectful, focused, and professional. "
             "Never use explicit sexual language and never pretend to be human."
         ),
         (
@@ -918,6 +1004,19 @@ def _build_system_message() -> str:
             "You help callers with Qualys support topics such as scans, VMDR, Cloud Agent, scanner appliances, tags, asset inventory, "
             "detections, authentication records, APIs, connectors, and integrations. If the caller describes an issue informally, "
             "rephrase it back in standard Qualys terminology before troubleshooting."
+        ),
+        (
+            "You are strictly limited to Qualys support and directly related Qualys integrations. "
+            "Do not answer general knowledge, news, weather, sports, entertainment, coding unrelated to Qualys, personal questions, roleplay, or open-world discussion."
+        ),
+        (
+            "Do not tell jokes, do not flirt, and do not engage in playful banter that distracts from support. "
+            "Keep the tone warm and professional, but focused on resolving Qualys issues."
+        ),
+        (
+            "If the caller asks a non-Qualys or off-topic question, give a short polite refusal such as "
+            "'I can help only with Qualys support and Qualys integrations. If you have a Qualys issue, tell me what is failing.' "
+            "Then redirect immediately back to Qualys support."
         ),
         (
             "Use adaptive support flow. Start warm and simple, then become more structured and technical only if needed. "
@@ -948,7 +1047,7 @@ def _build_system_message() -> str:
         ),
         (
             "When tools or knowledge sources are available, use them for product-specific answers and terminology. "
-            "If a tool is unavailable, answer with best-effort general knowledge and clearly signal uncertainty instead of inventing details."
+            "If a tool is unavailable, stay within Qualys support scope. Do not switch into general knowledge mode."
         ),
         (
             "Use the call memory tools throughout the conversation. Record important caller facts, tried steps, and your current Qualys issue framing "
@@ -1070,6 +1169,13 @@ def _estimate_pcmu_audio_ms(base64_payload: str) -> int:
 
 
 def _build_call_context_hint(call_state: CallState) -> str:
+    if call_state.off_topic_detected:
+        return (
+            "Guardrail reminder: the caller's latest request is off-topic for this assistant. "
+            "Do not answer it. Politely refuse in one short sentence, say you only handle Qualys support and Qualys integrations, "
+            "and redirect the caller to describe their Qualys issue. Do not joke, banter, or continue the off-topic topic."
+        )
+
     segments = [
         f"Live call context update: the caller currently sounds like they have {call_state.routed_issue_label}.",
     ]
@@ -1591,13 +1697,19 @@ async def handle_media_stream(websocket: WebSocket):
 
         async def maybe_send_call_context_hint() -> None:
             nonlocal last_context_hint_signature
-            if call_state.routed_issue_family == "general" and call_state.frustration_level == "low":
+            if (
+                call_state.routed_issue_family == "general"
+                and call_state.frustration_level == "low"
+                and not call_state.off_topic_detected
+            ):
                 return
 
             signature = "|".join(
                 [
                     call_state.routed_issue_family,
                     call_state.frustration_level,
+                    "off-topic" if call_state.off_topic_detected else "in-scope",
+                    call_state.off_topic_reason,
                     ",".join(call_state.integration_targets),
                     call_state.last_user_transcript[:120],
                 ]

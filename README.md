@@ -66,6 +66,7 @@ The default runtime persona is designed for a SearchUnify assistant that:
 - summarizes what it heard first and then says the Qualys issue framing out loud
 - uses adaptive troubleshooting with confirmation loops and one-step-at-a-time guidance
 - rephrases casual user wording into clearer Qualys terminology
+- stays strictly inside Qualys support scope and politely refuses off-topic questions like weather, news, jokes, or general world knowledge
 - remembers important context across the call such as product area, issue summary, tried steps, and caller details
 - handles interruptions, noise, and unclear speech more gracefully
 
