@@ -52,7 +52,7 @@ Optional variables you may want to set:
 - `KNOWLEDGE_BACKEND_KIND` to force `searchunify_post` or `generic_get` if auto-detection is not enough
 - `KNOWLEDGE_BACKEND_SSL_CERT_FILE`, `KNOWLEDGE_BACKEND_SSL_INSECURE`, and `KNOWLEDGE_CACHE_TTL_S` for enterprise TLS and caching control
 - `SEARCHUNIFY_UID`, `SEARCHUNIFY_ACCESS_TOKEN`, `SEARCHUNIFY_SID`, `SEARCHUNIFY_COOKIE`, `SEARCHUNIFY_ORIGIN`, and `SEARCHUNIFY_REFERER` for SearchUnify POST-based search
-- `LOG_LEVEL`, `LOG_OPENAI_EVENTS`, `SHOW_TIMING_MATH`
+- `LOG_LEVEL`, `LOG_OPENAI_EVENTS`, `SHOW_TIMING_MATH`, `LOG_CALL_TRANSCRIPTS`, `LOG_TOOL_PAYLOADS`, `LOG_TWILIO_MEDIA_EVENTS`, `LOG_KNOWLEDGE_DETAILS`
 - `OPENAI_CONNECT_RETRIES`, `OPENAI_CONNECT_TIMEOUT_S`, `OPENAI_BETA_HEADER`
 - `DEMO_LOOKUP_QUERY`, `DEMO_LOOKUP_PRODUCT_AREA` for the built-in demo probe endpoints
 
@@ -257,6 +257,10 @@ uvicorn main:app --host 0.0.0.0 --port 5050 --reload --proxy-headers --forwarded
 
 - Set `LOG_LEVEL=DEBUG` to get more detailed logs.
 - Set `LOG_OPENAI_EVENTS=true` to log OpenAI event types.
+- Set `LOG_CALL_TRANSCRIPTS=true` to log caller and assistant transcript text with routing/off-topic state.
+- Set `LOG_TOOL_PAYLOADS=true` to log realtime tool arguments, tool outputs, session config, and system hints.
+- Set `LOG_TWILIO_MEDIA_EVENTS=true` to log Twilio start/mark/stop events and audio chunk timing without dumping raw audio.
+- Set `LOG_KNOWLEDGE_DETAILS=true` to log rewritten SearchUnify queries, cache hits, response previews, and ranking summaries.
 - If Twilio can't connect to the WebSocket, confirm `PUBLIC_URL` is an HTTPS URL and that the generated stream URL starts with `wss://`.
 - If you deploy behind Nginx at `/socket/invoke/`, keep `PUBLIC_URL` set to the full public base path, for example `https://your-domain.example/socket/invoke`.
 - If you see `CERTIFICATE_VERIFY_FAILED` when connecting to OpenAI, ensure you installed dependencies (includes `certifi`), or set `OPENAI_SSL_CERT_FILE` to your corporate/root CA bundle.
@@ -268,6 +272,17 @@ uvicorn main:app --host 0.0.0.0 --port 5050 --reload --proxy-headers --forwarded
 - If SearchUnify lookups return no results, confirm `SEARCHUNIFY_UID`, `SEARCHUNIFY_ACCESS_TOKEN`, `SEARCHUNIFY_SID`, and any required `SEARCHUNIFY_COOKIE` / `SEARCHUNIFY_REFERER` values are set.
 - If interruptions feel too eager or too slow, tune `INTERRUPT_DEBOUNCE_MS`.
 - If speech recognition misses Qualys terms, adjust `TRANSCRIPTION_MODEL` or extend the transcription prompt in `main.py`.
+
+Recommended live-debug combo:
+
+```sh
+LOG_LEVEL=DEBUG
+LOG_CALL_TRANSCRIPTS=true
+LOG_TOOL_PAYLOADS=true
+LOG_KNOWLEDGE_DETAILS=true
+```
+
+Only enable `LOG_TWILIO_MEDIA_EVENTS=true` when you need low-level stream timing details because it is noisier than the other flags.
 
 **Set up ngrok so Twilio can access your local server**
 ![image](https://github.com/user-attachments/assets/510ecf96-ae94-4519-ab7d-6527f84df8b2)

@@ -61,6 +61,13 @@ def _json_dumps(obj: Any) -> str:
     return json.dumps(obj, **_JSON_DUMPS_KWARGS)
 
 
+def _safe_preview(value: Any, limit: int = 220) -> str:
+    text = str(value or "").strip().replace("\n", " ")
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 logger = logging.getLogger("realtime_voice")
@@ -117,6 +124,10 @@ TRANSCRIPTION_NOISE_REDUCTION = (os.getenv("TRANSCRIPTION_NOISE_REDUCTION") or "
 
 LOG_OPENAI_EVENTS = _env_bool("LOG_OPENAI_EVENTS", False)
 SHOW_TIMING_MATH = _env_bool("SHOW_TIMING_MATH", False)
+LOG_CALL_TRANSCRIPTS = _env_bool("LOG_CALL_TRANSCRIPTS", False)
+LOG_TOOL_PAYLOADS = _env_bool("LOG_TOOL_PAYLOADS", False)
+LOG_TWILIO_MEDIA_EVENTS = _env_bool("LOG_TWILIO_MEDIA_EVENTS", False)
+LOG_KNOWLEDGE_DETAILS = _env_bool("LOG_KNOWLEDGE_DETAILS", False)
 DEMO_LOOKUP_QUERY = (os.getenv("DEMO_LOOKUP_QUERY") or "cloud agent not checking in").strip()
 DEMO_LOOKUP_PRODUCT_AREA = (os.getenv("DEMO_LOOKUP_PRODUCT_AREA") or "cloud agent").strip()
 LOG_EVENT_TYPES = {
@@ -232,6 +243,28 @@ KNOWLEDGE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 app = FastAPI()
 
+
+@app.on_event("startup")
+async def _log_startup_configuration() -> None:
+    logger.info(
+        "Startup config model=%s voice=%s public_url=%s knowledge_backend=%s/%s",
+        OPENAI_MODEL,
+        VOICE,
+        PUBLIC_URL or "<unset>",
+        KNOWLEDGE_BACKEND_NAME if _knowledge_backend_enabled() else "<disabled>",
+        _knowledge_backend_kind() if _knowledge_backend_enabled() else "",
+    )
+    if any((LOG_OPENAI_EVENTS, SHOW_TIMING_MATH, LOG_CALL_TRANSCRIPTS, LOG_TOOL_PAYLOADS, LOG_TWILIO_MEDIA_EVENTS, LOG_KNOWLEDGE_DETAILS)):
+        logger.info(
+            "Debug flags openai_events=%s timing_math=%s call_transcripts=%s tool_payloads=%s twilio_media_events=%s knowledge_details=%s",
+            LOG_OPENAI_EVENTS,
+            SHOW_TIMING_MATH,
+            LOG_CALL_TRANSCRIPTS,
+            LOG_TOOL_PAYLOADS,
+            LOG_TWILIO_MEDIA_EVENTS,
+            LOG_KNOWLEDGE_DETAILS,
+        )
+
 try:
     import certifi  # type: ignore
 except Exception:  # noqa: BLE001
@@ -328,11 +361,20 @@ def _cache_get(key: str) -> dict[str, Any] | None:
     if expires_at < time.time():
         KNOWLEDGE_CACHE.pop(key, None)
         return None
+    if LOG_KNOWLEDGE_DETAILS:
+        logger.debug("Knowledge cache hit for key=%s", _safe_preview(key, limit=120))
     return payload
 
 
 def _cache_set(key: str, payload: dict[str, Any]) -> None:
     KNOWLEDGE_CACHE[key] = (time.time() + max(KNOWLEDGE_CACHE_TTL_S, 1), payload)
+    if LOG_KNOWLEDGE_DETAILS:
+        logger.debug(
+            "Knowledge cache set for key=%s ttl=%ss results=%s",
+            _safe_preview(key, limit=120),
+            KNOWLEDGE_CACHE_TTL_S,
+            len(payload.get("results") or []),
+        )
 
 
 def _freshness_bonus(indexed_date: str) -> float:
@@ -1265,6 +1307,15 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
     rewritten_query = _rewrite_support_query(query, product_area)
     backend_kind = _knowledge_backend_kind()
     cache_key = f"{backend_kind}|{_normalize_text(rewritten_query)}|{_normalize_text(product_area or '')}"
+    if LOG_KNOWLEDGE_DETAILS:
+        logger.debug(
+            "Knowledge lookup start backend=%s kind=%s query=%s rewritten=%s product_area=%s",
+            KNOWLEDGE_BACKEND_NAME,
+            backend_kind,
+            _safe_preview(query),
+            _safe_preview(rewritten_query),
+            product_area or "",
+        )
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -1309,6 +1360,12 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
     with urllib_request.urlopen(request, timeout=KNOWLEDGE_BACKEND_TIMEOUT_S, context=ssl_context) as response:
         body = response.read().decode("utf-8", errors="replace")
         content_type = response.headers.get("Content-Type", "")
+    if LOG_KNOWLEDGE_DETAILS:
+        logger.debug(
+            "Knowledge backend response content_type=%s body_preview=%s",
+            content_type,
+            _safe_preview(body, limit=300),
+        )
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:
@@ -1333,6 +1390,15 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
         "note": note,
         **grounding,
     }
+    if LOG_KNOWLEDGE_DETAILS:
+        logger.debug(
+            "Knowledge lookup normalized results=%s best_confidence=%s response_mode=%s conflict=%s best_title=%s",
+            len(normalized_results),
+            result.get("best_confidence"),
+            result.get("response_mode"),
+            result.get("conflict"),
+            _safe_preview((result.get("best_result") or {}).get("title") or ""),
+        )
     _cache_set(cache_key, result)
     return result
 
@@ -1372,6 +1438,14 @@ async def _openai_connect():
     if OPENAI_BETA_HEADER:
         headers["OpenAI-Beta"] = OPENAI_BETA_HEADER
     connect_kwargs = _ws_connect_kwargs(headers)
+    logger.debug(
+        "Opening OpenAI realtime connection url=%s model=%s project=%s organization=%s ssl_custom=%s",
+        OPENAI_WS_URL,
+        OPENAI_MODEL,
+        bool(OPENAI_PROJECT),
+        bool(OPENAI_ORGANIZATION),
+        "ssl" in connect_kwargs,
+    )
 
     last_exc: Exception | None = None
     ssl_hint_logged = False
@@ -1442,6 +1516,14 @@ async def _send_session_update(openai_ws) -> None:
         session_update["session"]["tools"] = tools
         session_update["session"]["tool_choice"] = "auto"
     logger.debug("Sending session.update")
+    if LOG_TOOL_PAYLOADS:
+        logger.debug(
+            "Session config voice=%s transcription_model=%s noise_reduction=%s tools=%s",
+            VOICE,
+            TRANSCRIPTION_MODEL,
+            TRANSCRIPTION_NOISE_REDUCTION,
+            [tool.get("name") for tool in tools],
+        )
     try:
         await openai_ws.send(_json_dumps(session_update))
     except websockets.exceptions.ConnectionClosed as exc:
@@ -1456,6 +1538,8 @@ async def _send_session_update(openai_ws) -> None:
 
 async def _send_initial_greeting(openai_ws) -> None:
     greeting_line = _build_initial_greeting_line()
+    if LOG_CALL_TRANSCRIPTS:
+        logger.debug("Initial greeting line=%s", _safe_preview(greeting_line))
     initial_conversation_item = {
         "type": "conversation.item.create",
         "item": {
@@ -1497,6 +1581,14 @@ async def health():
         "knowledge_backend_kind": _knowledge_backend_kind() if _knowledge_backend_enabled() else "",
         "knowledge_cache_ttl_s": KNOWLEDGE_CACHE_TTL_S,
         "demo_ready": _demo_ready(_build_demo_readiness_checks()),
+        "debug_flags": {
+            "log_openai_events": LOG_OPENAI_EVENTS,
+            "show_timing_math": SHOW_TIMING_MATH,
+            "log_call_transcripts": LOG_CALL_TRANSCRIPTS,
+            "log_tool_payloads": LOG_TOOL_PAYLOADS,
+            "log_twilio_media_events": LOG_TWILIO_MEDIA_EVENTS,
+            "log_knowledge_details": LOG_KNOWLEDGE_DETAILS,
+        },
     }
 
 
@@ -1559,6 +1651,15 @@ async def handle_media_stream(websocket: WebSocket):
     await websocket.accept()
     call_logger = logger.getChild(secrets.token_hex(4))
     call_logger.info("Twilio WS connected")
+    if LOG_TWILIO_MEDIA_EVENTS or LOG_TOOL_PAYLOADS or LOG_CALL_TRANSCRIPTS:
+        call_logger.debug(
+            "Call debug flags transcripts=%s tools=%s twilio_media=%s openai_events=%s knowledge=%s",
+            LOG_CALL_TRANSCRIPTS,
+            LOG_TOOL_PAYLOADS,
+            LOG_TWILIO_MEDIA_EVENTS,
+            LOG_OPENAI_EVENTS,
+            LOG_KNOWLEDGE_DETAILS,
+        )
 
     openai_ws = None
     try:
@@ -1660,6 +1761,8 @@ async def handle_media_stream(websocket: WebSocket):
                 arguments = {}
 
             call_logger.info("Handling tool call `%s`", tool_name)
+            if LOG_TOOL_PAYLOADS:
+                call_logger.debug("Tool `%s` arguments=%s", tool_name, _safe_preview(arguments, limit=500))
             if tool_name == "remember_call_context":
                 call_state.remember_context(arguments)
                 tool_output = {
@@ -1680,6 +1783,9 @@ async def handle_media_stream(websocket: WebSocket):
                 tool_output = await _knowledge_lookup(query, product_area, call_logger)
             else:
                 tool_output = {"error": f"Unsupported tool: {tool_name}"}
+
+            if LOG_TOOL_PAYLOADS:
+                call_logger.debug("Tool `%s` output=%s", tool_name, _safe_preview(tool_output, limit=700))
 
             await openai_ws.send(
                 _json_dumps(
@@ -1719,6 +1825,8 @@ async def handle_media_stream(websocket: WebSocket):
 
             last_context_hint_signature = signature
             system_hint = _build_call_context_hint(call_state)
+            if LOG_TOOL_PAYLOADS:
+                call_logger.debug("Sending context hint=%s", _safe_preview(system_hint, limit=500))
             await openai_ws.send(
                 _json_dumps(
                     {
@@ -1745,6 +1853,8 @@ async def handle_media_stream(websocket: WebSocket):
                     event_type = data.get("event")
                     if event_type == "start":
                         stream_sid = data.get("start", {}).get("streamSid")
+                        if LOG_TWILIO_MEDIA_EVENTS:
+                            call_logger.debug("Twilio start payload=%s", _safe_preview(data, limit=500))
                         twilio_started.set()
                         latest_media_timestamp_ms = 0
                         assistant_audio_sent_ms = 0
@@ -1768,10 +1878,18 @@ async def handle_media_stream(websocket: WebSocket):
                         if payload is None or ts is None:
                             continue
                         latest_media_timestamp_ms = int(ts)
+                        if LOG_TWILIO_MEDIA_EVENTS:
+                            call_logger.debug(
+                                "Twilio media ts=%s payload_chars=%s",
+                                ts,
+                                len(payload),
+                            )
                         await openai_ws.send(f'{{"type":"input_audio_buffer.append","audio":"{payload}"}}')
                         continue
 
                     if event_type == "mark":
+                        if LOG_TWILIO_MEDIA_EVENTS:
+                            call_logger.debug("Twilio mark payload=%s queue_before=%s", _safe_preview(data, limit=300), len(mark_queue))
                         if mark_queue:
                             mark_queue.popleft()
                         if not mark_queue:
@@ -1782,6 +1900,8 @@ async def handle_media_stream(websocket: WebSocket):
 
                     if event_type == "stop":
                         call_logger.info("Twilio sent stop; closing")
+                        if LOG_TWILIO_MEDIA_EVENTS:
+                            call_logger.debug("Twilio stop payload=%s", _safe_preview(data, limit=300))
                         cancel_pending_interrupt()
                         await openai_ws.close()
                         return
@@ -1858,6 +1978,15 @@ async def handle_media_stream(websocket: WebSocket):
                                 call_state.routed_issue_family,
                                 call_state.frustration_level,
                             )
+                            if LOG_CALL_TRANSCRIPTS:
+                                call_logger.debug(
+                                    "Caller transcript=%s route_changed=%s off_topic=%s reason=%s context=%s",
+                                    _safe_preview(transcript, limit=400),
+                                    route_changed,
+                                    call_state.off_topic_detected,
+                                    call_state.off_topic_reason,
+                                    _safe_preview(call_state.summary_text(), limit=500),
+                                )
                             await maybe_send_call_context_hint()
                         continue
 
@@ -1869,6 +1998,8 @@ async def handle_media_stream(websocket: WebSocket):
                         if transcript:
                             call_state.last_assistant_transcript = transcript
                             call_state.assistant_turns += 1
+                            if LOG_CALL_TRANSCRIPTS:
+                                call_logger.debug("Assistant transcript=%s", _safe_preview(transcript, limit=400))
                         continue
 
                     if event_type in {"response.audio.delta", "response.output_audio.delta"}:
@@ -1882,6 +2013,13 @@ async def handle_media_stream(websocket: WebSocket):
                             f'{{"event":"media","streamSid":"{stream_sid}","media":{{"payload":"{delta}"}}}}'
                         )
                         assistant_audio_sent_ms += _estimate_pcmu_audio_ms(delta)
+                        if LOG_TWILIO_MEDIA_EVENTS:
+                            call_logger.debug(
+                                "OpenAI audio delta item_id=%s payload_chars=%s total_assistant_audio_ms=%s",
+                                event.get("item_id"),
+                                len(delta),
+                                assistant_audio_sent_ms,
+                            )
 
                         if response_start_timestamp_twilio_ms is None and latest_media_timestamp_ms > 0:
                             response_start_timestamp_twilio_ms = latest_media_timestamp_ms
