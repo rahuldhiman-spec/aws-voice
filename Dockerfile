@@ -13,7 +13,7 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py README.md .env.example ./
+COPY main.py README.md ./.env ./
 COPY scripts ./scripts
 
 EXPOSE 3300
