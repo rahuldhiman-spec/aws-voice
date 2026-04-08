@@ -97,6 +97,11 @@ SUPPORT_PRODUCT = (os.getenv("SUPPORT_PRODUCT") or "Qualys").strip()
 VOICE = os.getenv("VOICE", "coral").strip()
 AI_SPEAKS_FIRST = _env_bool("AI_SPEAKS_FIRST", True)
 INTERRUPT_DEBOUNCE_MS = int(os.getenv("INTERRUPT_DEBOUNCE_MS", "180"))
+INTERRUPT_MIN_SPEECH_MS = max(int(os.getenv("INTERRUPT_MIN_SPEECH_MS", "260")), INTERRUPT_DEBOUNCE_MS)
+INTERRUPT_RESPONSE_COOLDOWN_MS = int(os.getenv("INTERRUPT_RESPONSE_COOLDOWN_MS", "250"))
+SERVER_VAD_THRESHOLD = float(os.getenv("SERVER_VAD_THRESHOLD", "0.62"))
+SERVER_VAD_PREFIX_PADDING_MS = int(os.getenv("SERVER_VAD_PREFIX_PADDING_MS", "300"))
+SERVER_VAD_SILENCE_DURATION_MS = int(os.getenv("SERVER_VAD_SILENCE_DURATION_MS", "450"))
 KNOWLEDGE_BACKEND_URL = (os.getenv("KNOWLEDGE_BACKEND_URL") or "").strip()
 KNOWLEDGE_BACKEND_NAME = (os.getenv("KNOWLEDGE_BACKEND_NAME") or "support knowledge backend").strip()
 KNOWLEDGE_BACKEND_API_KEY = (os.getenv("KNOWLEDGE_BACKEND_API_KEY") or "").strip()
@@ -321,6 +326,13 @@ async def _log_startup_configuration() -> None:
             LOG_TWILIO_MEDIA_EVENTS,
             LOG_KNOWLEDGE_DETAILS,
         )
+    logger.info(
+        "Interruption config min_speech_ms=%s cooldown_ms=%s vad_threshold=%.2f vad_silence_ms=%s",
+        INTERRUPT_MIN_SPEECH_MS,
+        INTERRUPT_RESPONSE_COOLDOWN_MS,
+        SERVER_VAD_THRESHOLD,
+        SERVER_VAD_SILENCE_DURATION_MS,
+    )
 
 try:
     import certifi  # type: ignore
@@ -1113,14 +1125,14 @@ def _demo_ready(checks: list[dict[str, Any]]) -> bool:
 
 def _build_system_message() -> str:
     sections = [
-        f"You are {ASSISTANT_NAME}, a clearly disclosed AI voice assistant for {SUPPORT_PRODUCT} support.",
+        f"You are {ASSISTANT_NAME}, a clearly disclosed support assistant for {SUPPORT_PRODUCT}.",
         (
-            "Your voice should feel warm, confident, feminine, polished, and natural. "
-            "Always remain enterprise-safe, respectful, focused, and professional. "
-            "Never use explicit sexual language and never pretend to be human."
+            "Your voice should feel warm, confident, very feminine, polished, empathetic, attractive, charming and natural and helpfull and human like a real person. "
+            "Always remain enterprise-safe, respectful, focused, calming and professional."
+            "Never use explicit sexual language."
         ),
         (
-            "On the very first greeting, make it clear you are an AI assistant. After that, speak naturally like a strong support engineer. "
+            "On the very first greeting, make it clear you are an support assistant, Never let user know that you are an AI. After that, speak naturally like a strong support engineer. "
             "Use short spoken sentences, smooth transitions, and conversational support phrases such as "
             "'let's try this', 'have you checked that already?', or 'okay, that rules one thing out'."
         ),
@@ -1140,11 +1152,11 @@ def _build_system_message() -> str:
         ),
         (
             "Do not tell jokes, do not flirt, and do not engage in playful banter that distracts from support. "
-            "Keep the tone warm and professional, but focused on resolving Qualys issues."
+            "Keep the tone warm and professional, but focused on resolving Qualys issues like a real human language and pretend like a 35 year old female support engineer with 10 years of experience at Qualys would do, not an AI assistant. "
         ),
         (
-            "If the caller asks a non-Qualys or off-topic question, give a short polite refusal such as "
-            "'I can help only with Qualys support and Qualys integrations. If you have a Qualys issue, tell me what is failing.' "
+            "If the caller asks a non-Qualys or off-topic question, give a short polite refusal and make refocus user to the qualys topic tell user i am not answering this, request caller to continue to qualys topic please."
+            "'If you have a Qualys issue, tell me what is failing.' "
             "Then redirect immediately back to Qualys support."
         ),
         (
@@ -1742,6 +1754,9 @@ async def _send_session_update(openai_ws) -> None:
                         "type": "server_vad",
                         "create_response": False,
                         "interrupt_response": True,
+                        "threshold": SERVER_VAD_THRESHOLD,
+                        "prefix_padding_ms": SERVER_VAD_PREFIX_PADDING_MS,
+                        "silence_duration_ms": SERVER_VAD_SILENCE_DURATION_MS,
                     },
                 },
                 "output": {
@@ -1924,6 +1939,9 @@ async def handle_media_stream(websocket: WebSocket):
         knowledge_prefetch_product_area = ""
         knowledge_prefetch_task: asyncio.Task[dict[str, Any]] | None = None
         knowledge_prefetch_result: dict[str, Any] | None = None
+        active_response_id: str | None = None
+        interruption_pending_ack = False
+        response_resume_not_before = 0.0
         response_done_event = asyncio.Event()
         response_done_event.set()
         call_state = CallState(assistant_name=ASSISTANT_NAME, support_product=SUPPORT_PRODUCT)
@@ -1937,9 +1955,25 @@ async def handle_media_stream(websocket: WebSocket):
             mark_queue.append("responsePart")
 
         async def handle_speech_started_event() -> None:
-            nonlocal assistant_audio_sent_ms, response_start_timestamp_twilio_ms, last_assistant_item_id
+            nonlocal assistant_audio_sent_ms, response_start_timestamp_twilio_ms, last_assistant_item_id, interruption_pending_ack, response_resume_not_before
             if not (mark_queue and response_start_timestamp_twilio_ms is not None and last_assistant_item_id):
                 return
+
+            interruption_pending_ack = True
+            response_resume_not_before = max(
+                response_resume_not_before,
+                time.monotonic() + (max(INTERRUPT_RESPONSE_COOLDOWN_MS, 0) / 1000),
+            )
+            cancel_knowledge_prefetch()
+            if active_response_id:
+                await openai_ws.send(
+                    _json_dumps(
+                        {
+                            "type": "response.cancel",
+                            "response_id": active_response_id,
+                        }
+                    )
+                )
 
             elapsed_ms = max(0, latest_media_timestamp_ms - response_start_timestamp_twilio_ms)
             truncate_at_ms = min(elapsed_ms, max(assistant_audio_sent_ms, 0))
@@ -1997,7 +2031,7 @@ async def handle_media_stream(websocket: WebSocket):
             async def _delayed_interrupt() -> None:
                 nonlocal pending_interrupt_task
                 try:
-                    await asyncio.sleep(max(INTERRUPT_DEBOUNCE_MS, 0) / 1000)
+                    await asyncio.sleep(max(INTERRUPT_MIN_SPEECH_MS, 0) / 1000)
                     await handle_speech_started_event()
                 except asyncio.CancelledError:
                     return
@@ -2023,9 +2057,48 @@ async def handle_media_stream(websocket: WebSocket):
                 )
             )
 
+        async def maybe_send_interruption_ack_hint() -> None:
+            nonlocal interruption_pending_ack
+            if not interruption_pending_ack:
+                return
+
+            interrupted_point = _safe_preview(call_state.last_assistant_transcript, limit=240)
+            hint = (
+                "The caller interrupted your previous answer. Briefly acknowledge that interruption, "
+                "respond to the caller's newest words first, and continue from your previous point only if it is still relevant."
+            )
+            if interrupted_point:
+                hint += f" Your interrupted point was: {interrupted_point}."
+            await send_system_message(hint, "interruption hint")
+            interruption_pending_ack = False
+
         async def request_assistant_response(reason: str, wait_for_previous: bool = True) -> None:
+            nonlocal active_response_id
             if wait_for_previous:
-                await response_done_event.wait()
+                wait_timeout_s = 3.0 if time.monotonic() < response_resume_not_before else 8.0
+                try:
+                    await asyncio.wait_for(response_done_event.wait(), timeout=wait_timeout_s)
+                except TimeoutError:
+                    if active_response_id:
+                        call_logger.warning(
+                            "Timed out waiting for active response=%s before phase=%s; cancelling and retrying wait",
+                            active_response_id,
+                            reason,
+                        )
+                        await openai_ws.send(
+                            _json_dumps(
+                                {
+                                    "type": "response.cancel",
+                                    "response_id": active_response_id,
+                                }
+                            )
+                        )
+                        await asyncio.wait_for(response_done_event.wait(), timeout=2.0)
+                    else:
+                        raise
+            remaining_cooldown_s = response_resume_not_before - time.monotonic()
+            if remaining_cooldown_s > 0:
+                await asyncio.sleep(remaining_cooldown_s)
             response_done_event.clear()
             if reason in {"knowledge-bridge", "knowledge-answer", "direct-answer"}:
                 call_logger.info("Assistant response started phase=%s", reason)
@@ -2145,6 +2218,7 @@ async def handle_media_stream(websocket: WebSocket):
                     )
 
                 await maybe_send_call_context_hint()
+                await maybe_send_interruption_ack_hint()
                 if _should_search_before_answer(call_state):
                     await run_search_first_response()
                     return
@@ -2277,7 +2351,7 @@ async def handle_media_stream(websocket: WebSocket):
             await send_system_message(system_hint, "context hint")
 
         async def receive_from_twilio() -> None:
-            nonlocal assistant_audio_sent_ms, stream_sid, latest_media_timestamp_ms, last_assistant_item_id, response_start_timestamp_twilio_ms, last_context_hint_signature, last_user_input_signature, last_user_input_signature_at
+            nonlocal assistant_audio_sent_ms, stream_sid, latest_media_timestamp_ms, last_assistant_item_id, response_start_timestamp_twilio_ms, last_context_hint_signature, last_user_input_signature, last_user_input_signature_at, interruption_pending_ack, response_resume_not_before, active_response_id
             try:
                 async for message in websocket.iter_text():
                     try:
@@ -2301,6 +2375,9 @@ async def handle_media_stream(websocket: WebSocket):
                         last_context_hint_signature = ""
                         last_user_input_signature = ""
                         last_user_input_signature_at = 0.0
+                        interruption_pending_ack = False
+                        response_resume_not_before = 0.0
+                        active_response_id = None
                         cancel_pending_user_turn()
                         cancel_knowledge_prefetch()
                         response_done_event.set()
@@ -2360,7 +2437,7 @@ async def handle_media_stream(websocket: WebSocket):
                     await openai_ws.close()
 
         async def send_to_twilio() -> None:
-            nonlocal assistant_audio_sent_ms, last_assistant_item_id, response_start_timestamp_twilio_ms
+            nonlocal assistant_audio_sent_ms, last_assistant_item_id, response_start_timestamp_twilio_ms, active_response_id
             try:
                 await asyncio.wait_for(twilio_started.wait(), timeout=10)
             except TimeoutError:
@@ -2380,6 +2457,13 @@ async def handle_media_stream(websocket: WebSocket):
                     if LOG_OPENAI_EVENTS or (event_type in LOG_EVENT_TYPES):
                         call_logger.debug("OpenAI event: %s", event_type)
 
+                    if event_type == "response.created":
+                        response = event.get("response") or {}
+                        response_id = response.get("id")
+                        if isinstance(response_id, str) and response_id.strip():
+                            active_response_id = response_id.strip()
+                        continue
+
                     if event_type == "error":
                         error = event.get("error") or event
                         response_done_event.set()
@@ -2394,6 +2478,7 @@ async def handle_media_stream(websocket: WebSocket):
                         return
 
                     if event_type == "response.done":
+                        active_response_id = None
                         response_done_event.set()
                         for item in _extract_function_calls_from_event(event):
                             await handle_tool_call(item)
