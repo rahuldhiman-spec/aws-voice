@@ -1967,7 +1967,6 @@ async def handle_media_stream(websocket: WebSocket):
             assistant_audio_sent_ms = 0
             last_assistant_item_id = None
             response_start_timestamp_twilio_ms = None
-            response_done_event.set()
 
         def cancel_pending_interrupt() -> None:
             nonlocal pending_interrupt_task
@@ -2436,6 +2435,12 @@ async def handle_media_stream(websocket: WebSocket):
                         if not delta or not stream_sid:
                             continue
 
+                        item_id = event.get("item_id")
+                        if item_id and item_id != last_assistant_item_id:
+                            assistant_audio_sent_ms = 0
+                            response_start_timestamp_twilio_ms = latest_media_timestamp_ms if latest_media_timestamp_ms > 0 else None
+                            last_assistant_item_id = item_id
+
                         if response_start_timestamp_twilio_ms is None:
                             assistant_audio_sent_ms = 0
                         await websocket.send_text(
@@ -2452,10 +2457,6 @@ async def handle_media_stream(websocket: WebSocket):
 
                         if response_start_timestamp_twilio_ms is None and latest_media_timestamp_ms > 0:
                             response_start_timestamp_twilio_ms = latest_media_timestamp_ms
-
-                        item_id = event.get("item_id")
-                        if item_id:
-                            last_assistant_item_id = item_id
 
                         await send_mark()
                         continue
