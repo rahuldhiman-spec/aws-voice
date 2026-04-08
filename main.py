@@ -87,7 +87,7 @@ OPENAI_CONNECT_TIMEOUT_S = float(os.getenv("OPENAI_CONNECT_TIMEOUT_S", "10"))
 OPENAI_SSL_CERT_FILE = os.getenv("OPENAI_SSL_CERT_FILE", "").strip()
 OPENAI_SSL_INSECURE = _env_bool("OPENAI_SSL_INSECURE", False)
 
-LEGACY_DEFAULT_SYSTEM_MESSAGE = "You are a helpful and bubbly AI assistant who answers any questions I ask."
+LEGACY_DEFAULT_SYSTEM_MESSAGE = "You are a helpful human female assistant who answers any questions I ask."
 CUSTOM_SYSTEM_MESSAGE = (os.getenv("SYSTEM_MESSAGE") or "").strip()
 if CUSTOM_SYSTEM_MESSAGE == LEGACY_DEFAULT_SYSTEM_MESSAGE:
     CUSTOM_SYSTEM_MESSAGE = ""
@@ -1280,7 +1280,7 @@ def _build_system_message() -> str:
         sections.append(f"Additional business instructions: {CUSTOM_SYSTEM_MESSAGE}")
 
     return "\n\n".join(sections)
-    
+
 SYSTEM_MESSAGE = _build_system_message()
 
 
