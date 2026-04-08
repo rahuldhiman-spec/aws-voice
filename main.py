@@ -94,7 +94,7 @@ if CUSTOM_SYSTEM_MESSAGE == LEGACY_DEFAULT_SYSTEM_MESSAGE:
 
 ASSISTANT_NAME = (os.getenv("ASSISTANT_NAME") or "SearchUnify assistant").strip()
 SUPPORT_PRODUCT = (os.getenv("SUPPORT_PRODUCT") or "Qualys").strip()
-VOICE = os.getenv("VOICE", "coral").strip()
+VOICE = os.getenv("VOICE", "marin").strip()
 AI_SPEAKS_FIRST = _env_bool("AI_SPEAKS_FIRST", True)
 INTERRUPT_DEBOUNCE_MS = int(os.getenv("INTERRUPT_DEBOUNCE_MS", "180"))
 INTERRUPT_MIN_SPEECH_MS = max(int(os.getenv("INTERRUPT_MIN_SPEECH_MS", "260")), INTERRUPT_DEBOUNCE_MS)
@@ -297,7 +297,7 @@ SEARCH_SYMPTOM_PATTERNS = (
     "access denied",
     "error",
 )
-SUPPORTED_REALTIME_VOICES = ("alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
+SUPPORTED_REALTIME_VOICES = ("marin", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
 SEARCHUNIFY_HIGHLIGHT_START = "___su-highlight-start___"
 SEARCHUNIFY_HIGHLIGHT_END = "___su-highlight-end___"
 KNOWLEDGE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
