@@ -71,6 +71,7 @@ def _safe_preview(value: Any, limit: int = 220) -> str:
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 logger = logging.getLogger("realtime_voice")
+APP_FLOW_VERSION = "2026-04-08-kb-flow-v3"
 
 PORT = int(os.getenv("PORT", "5050"))
 PUBLIC_URL = (os.getenv("PUBLIC_URL") or "").strip() or None
@@ -302,7 +303,8 @@ app = FastAPI()
 @app.on_event("startup")
 async def _log_startup_configuration() -> None:
     logger.info(
-        "Startup config model=%s voice=%s public_url=%s knowledge_backend=%s/%s",
+        "Startup config version=%s model=%s voice=%s public_url=%s knowledge_backend=%s/%s",
+        APP_FLOW_VERSION,
         OPENAI_MODEL,
         VOICE,
         PUBLIC_URL or "<unset>",
@@ -1917,6 +1919,11 @@ async def handle_media_stream(websocket: WebSocket):
         last_user_input_signature = ""
         last_user_input_signature_at = 0.0
         pending_user_turn_task: asyncio.Task[None] | None = None
+        knowledge_flow_active = False
+        knowledge_prefetch_query = ""
+        knowledge_prefetch_product_area = ""
+        knowledge_prefetch_task: asyncio.Task[dict[str, Any]] | None = None
+        knowledge_prefetch_result: dict[str, Any] | None = None
         response_done_event = asyncio.Event()
         response_done_event.set()
         call_state = CallState(assistant_name=ASSISTANT_NAME, support_product=SUPPORT_PRODUCT)
@@ -1974,6 +1981,16 @@ async def handle_media_stream(websocket: WebSocket):
                 pending_user_turn_task.cancel()
             pending_user_turn_task = None
 
+        def cancel_knowledge_prefetch() -> None:
+            nonlocal knowledge_prefetch_task, knowledge_prefetch_result, knowledge_prefetch_query, knowledge_prefetch_product_area, knowledge_flow_active
+            if knowledge_prefetch_task is not None and not knowledge_prefetch_task.done():
+                knowledge_prefetch_task.cancel()
+            knowledge_prefetch_task = None
+            knowledge_prefetch_result = None
+            knowledge_prefetch_query = ""
+            knowledge_prefetch_product_area = ""
+            knowledge_flow_active = False
+
         async def schedule_interrupt() -> None:
             nonlocal pending_interrupt_task
             cancel_pending_interrupt()
@@ -2027,7 +2044,40 @@ async def handle_media_stream(websocket: WebSocket):
             except TimeoutError:
                 call_logger.debug("Timed out waiting for assistant response completion")
 
+        async def get_server_managed_knowledge_result(query: str, product_area: str | None) -> dict[str, Any]:
+            nonlocal knowledge_prefetch_result
+            normalized_query = _normalize_text(query)
+            normalized_product_area = _normalize_text(product_area or "")
+            if (
+                knowledge_prefetch_result is not None
+                and normalized_query == _normalize_text(knowledge_prefetch_query)
+                and normalized_product_area == _normalize_text(knowledge_prefetch_product_area)
+            ):
+                return knowledge_prefetch_result
+
+            if (
+                knowledge_prefetch_task is not None
+                and normalized_query == _normalize_text(knowledge_prefetch_query)
+                and normalized_product_area == _normalize_text(knowledge_prefetch_product_area)
+            ):
+                try:
+                    knowledge_prefetch_result = await knowledge_prefetch_task
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    call_logger.exception("Server-managed knowledge prefetch failed")
+                    knowledge_prefetch_result = {
+                        "backend": KNOWLEDGE_BACKEND_NAME,
+                        "query": query,
+                        "results": [],
+                        "error": "server-managed prefetch failed",
+                    }
+                return knowledge_prefetch_result
+
+            return await _knowledge_lookup(query, product_area, call_logger)
+
         async def run_search_first_response() -> None:
+            nonlocal knowledge_flow_active, knowledge_prefetch_task, knowledge_prefetch_result, knowledge_prefetch_query, knowledge_prefetch_product_area
             query = (call_state.last_user_transcript or call_state.issue_summary).strip()
             if not query:
                 await send_system_message(_build_direct_response_hint(call_state), "direct answer")
@@ -2035,32 +2085,42 @@ async def handle_media_stream(websocket: WebSocket):
                 return
 
             product_area = _best_product_area_hint(call_state)
+            knowledge_flow_active = True
+            knowledge_prefetch_query = query
+            knowledge_prefetch_product_area = product_area or ""
+            knowledge_prefetch_result = None
             call_logger.info(
                 "Knowledge bridge starting product_area=%s query=%s",
                 product_area or "",
                 _safe_preview(query, limit=220),
             )
-            lookup_task = asyncio.create_task(
+            knowledge_prefetch_task = asyncio.create_task(
                 _knowledge_lookup(query, product_area, call_logger),
                 name="knowledge-prefetch",
             )
-            await send_system_message(_build_search_bridge_hint(call_state), "knowledge bridge")
-            await request_assistant_response("knowledge-bridge")
-            await wait_for_assistant_response(4.5)
+            try:
+                await send_system_message(_build_search_bridge_hint(call_state), "knowledge bridge")
+                await request_assistant_response("knowledge-bridge")
+                await wait_for_assistant_response(4.5)
 
-            grounding = await lookup_task
-            best_result = grounding.get("best_result") or {}
-            best_title = str(best_result.get("title") or "").strip()
-            if best_title:
-                _append_unique(call_state.grounding_notes, f"Knowledge base match: {best_title}", limit=4)
-            call_logger.info(
-                "Knowledge answer starting best_title=%s confidence=%s response_mode=%s",
-                _safe_preview(best_title, limit=160),
-                grounding.get("best_confidence"),
-                grounding.get("response_mode"),
-            )
-            await send_system_message(_build_knowledge_grounding_hint(grounding, call_state), "knowledge grounding")
-            await request_assistant_response("knowledge-answer")
+                grounding = await get_server_managed_knowledge_result(query, product_area)
+                knowledge_prefetch_result = grounding
+                best_result = grounding.get("best_result") or {}
+                best_title = str(best_result.get("title") or "").strip()
+                if best_title:
+                    _append_unique(call_state.grounding_notes, f"Knowledge base match: {best_title}", limit=4)
+                call_logger.info(
+                    "Knowledge answer starting best_title=%s confidence=%s response_mode=%s",
+                    _safe_preview(best_title, limit=160),
+                    grounding.get("best_confidence"),
+                    grounding.get("response_mode"),
+                )
+                await send_system_message(_build_knowledge_grounding_hint(grounding, call_state), "knowledge grounding")
+                await request_assistant_response("knowledge-answer")
+            finally:
+                knowledge_flow_active = False
+                if knowledge_prefetch_task is not None and knowledge_prefetch_task.done():
+                    knowledge_prefetch_task = None
 
         async def handle_transcribed_user_turn(transcript: str) -> None:
             try:
@@ -2113,6 +2173,7 @@ async def handle_media_stream(websocket: WebSocket):
             last_user_input_signature = signature
             last_user_input_signature_at = now
             cancel_pending_user_turn()
+            cancel_knowledge_prefetch()
             pending_user_turn_task = asyncio.create_task(
                 handle_transcribed_user_turn(transcript),
                 name="handle-user-turn",
@@ -2156,7 +2217,11 @@ async def handle_media_stream(websocket: WebSocket):
                 product_area = str(arguments.get("product_area") or "").strip() or None
                 if not query:
                     query = call_state.issue_summary or call_state.last_user_transcript
-                tool_output = await _knowledge_lookup(query, product_area, call_logger)
+                if knowledge_flow_active:
+                    call_logger.info("Reusing server-managed knowledge flow for tool call query=%s", _safe_preview(query, limit=220))
+                    tool_output = await get_server_managed_knowledge_result(query, product_area)
+                else:
+                    tool_output = await _knowledge_lookup(query, product_area, call_logger)
             else:
                 tool_output = {"error": f"Unsupported tool: {tool_name}"}
 
@@ -2180,6 +2245,9 @@ async def handle_media_stream(websocket: WebSocket):
                 best_title = str(best_result.get("title") or "").strip()
                 if best_title:
                     _append_unique(call_state.grounding_notes, f"Knowledge base match: {best_title}", limit=4)
+                if knowledge_flow_active:
+                    call_logger.info("Skipping duplicate response.create for server-managed knowledge tool call")
+                    return
                 await send_system_message(_build_knowledge_grounding_hint(tool_output, call_state), "knowledge grounding")
             await request_assistant_response(f"tool:{tool_name}", wait_for_previous=False)
 
@@ -2235,6 +2303,7 @@ async def handle_media_stream(websocket: WebSocket):
                         last_user_input_signature = ""
                         last_user_input_signature_at = 0.0
                         cancel_pending_user_turn()
+                        cancel_knowledge_prefetch()
                         response_done_event.set()
                         cancel_pending_interrupt()
                         mark_queue.clear()
@@ -2277,6 +2346,7 @@ async def handle_media_stream(websocket: WebSocket):
                         if LOG_TWILIO_MEDIA_EVENTS:
                             call_logger.debug("Twilio stop payload=%s", _safe_preview(data, limit=300))
                         cancel_pending_user_turn()
+                        cancel_knowledge_prefetch()
                         cancel_pending_interrupt()
                         await openai_ws.close()
                         return
@@ -2285,6 +2355,7 @@ async def handle_media_stream(websocket: WebSocket):
                 call_logger.info("Twilio WS disconnected")
             finally:
                 cancel_pending_user_turn()
+                cancel_knowledge_prefetch()
                 cancel_pending_interrupt()
                 with suppress(Exception):
                     await openai_ws.close()
@@ -2402,6 +2473,7 @@ async def handle_media_stream(websocket: WebSocket):
                 call_logger.exception("Error forwarding OpenAI -> Twilio")
             finally:
                 cancel_pending_user_turn()
+                cancel_knowledge_prefetch()
                 cancel_pending_interrupt()
                 with suppress(Exception):
                     await websocket.close()

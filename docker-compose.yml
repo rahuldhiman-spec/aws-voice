@@ -7,6 +7,11 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    volumes:
+      - ./main.py:/app/main.py:ro
+      - ./scripts:/app/scripts:ro
+      - ./.env:/app/.env:ro
+      - ./README.md:/app/README.md:ro
     environment:
       PORT: "3300"
       PUBLIC_URL: ${PUBLIC_URL}
