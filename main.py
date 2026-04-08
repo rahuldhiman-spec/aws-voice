@@ -1174,7 +1174,7 @@ def _build_system_message() -> str:
         ),
         (
             "Answer directly from the live conversation when the likely next step is already clear and you do not need exact product facts. "
-            "Keep that direct answer short, natural, and human, like a strong support engineer."
+            "Keep that direct answer short, natural, and human, like a strong support engineer: a brief explanation plus one next step."
         ),
         (
             "If SearchUnify or another support knowledge source is available, use it only when needed: when you are uncertain, when the user is ambiguous, "
@@ -1185,7 +1185,8 @@ def _build_system_message() -> str:
         ),
         (
             "If you find guidance in the knowledge base, say that briefly and then explain it naturally in human terms. "
-            "If the retrieved guidance is weak, empty, or conflicting, ask one targeted clarifying question instead of guessing. "
+            "If the retrieved guidance is weak, empty, or conflicting, give one safe preliminary check first and then ask one targeted clarifying question instead of guessing. "
+            "If the guidance is strong but long, give only the first one or two steps and then pause for confirmation. "
             "Trust retrieved knowledge-base guidance over your earlier assumption when they conflict."
         ),
         (
@@ -1364,7 +1365,7 @@ def _build_direct_response_hint(call_state: CallState) -> str:
     return (
         "For your next response, answer directly from the live call context without checking the knowledge base unless you are genuinely uncertain. "
         f"Frame the issue in explicit Qualys terms around {product_area}. "
-        "Sound like a real support engineer: summarize what you heard, explain the likely meaning in plain language, and give only the single best next step. "
+        "Sound like a real support engineer: summarize what you heard, give a brief plain-language explanation of what it likely means, and then give only the single best next step. "
         "If you realize you are not sure, say one short line that you are quickly checking the knowledge base for the exact path and then use `search_qualys_support_knowledge`."
     )
 
@@ -1375,29 +1376,49 @@ def _build_search_bridge_hint(call_state: CallState) -> str:
         "For your next response, do not troubleshoot yet. "
         f"Give exactly one short spoken sentence that summarizes the issue in explicit Qualys terms around {product_area} "
         "and says you are quickly checking the knowledge base for the exact path. "
-        "Do not give steps yet, and do not ask a question in this transition."
+        "Make the sentence feel slightly adapted to the product area instead of robotic. Do not give steps yet, and do not ask a question in this transition."
     )
 
 
-def _build_knowledge_grounding_hint(result: dict[str, Any]) -> str:
+def _build_safe_preliminary_check(call_state: CallState) -> str:
+    family = call_state.routed_issue_family
+    if family == "scan":
+        return "ask them to confirm whether the latest scan job is still running, failed, or stuck in the scan details view"
+    if family == "cloud_agent":
+        return "ask them to confirm whether the Cloud Agent service is running and when the last check-in timestamp changed"
+    if family == "integration":
+        return "ask them to confirm the connector job status and the exact error text from the target platform"
+    if family == "api":
+        return "ask them to confirm the exact endpoint, response code, and header they are using"
+    if family == "authentication":
+        return "ask them to confirm whether the authentication record test itself is failing and what exact failure message they see"
+    if family == "vmdr":
+        return "ask them to confirm whether the affected asset is present and whether the latest scan or agent check-in completed"
+    return "ask them to confirm the exact error text or the last screen where the workflow fails"
+
+
+def _build_knowledge_grounding_hint(result: dict[str, Any], call_state: CallState) -> str:
     backend = str(result.get("backend") or KNOWLEDGE_BACKEND_NAME).strip()
     query = str(result.get("rewritten_query") or result.get("query") or "").strip()
     response_mode = str(result.get("response_mode") or "clarify_first").strip()
     error = str(result.get("error") or "").strip()
     note = str(result.get("note") or "").strip()
     results = result.get("results") or []
+    safe_check = _build_safe_preliminary_check(call_state)
 
     if error:
         return (
             f"Knowledge grounding update: live lookup to {backend} failed with `{error}`. "
-            "Tell the caller you could not confirm the exact path in the knowledge base, do not invent product-specific steps, and ask one targeted clarifying question."
+            "Tell the caller you could not confirm the exact path in the knowledge base. "
+            f"Give one safe preliminary check first: {safe_check}. Then ask one targeted clarifying question. Do not invent product-specific steps."
         )
 
     if not results:
         reason = note or "No matching support results were returned."
         return (
             f"Knowledge grounding update: {backend} returned no strong results for `{query}`. {reason} "
-            "Tell the caller you checked the knowledge base but need one more detail, ask one short clarifying question before giving detailed troubleshooting steps, and do not pretend you verified an article."
+            "Tell the caller you checked the knowledge base but need one more detail. "
+            f"Give one safe preliminary check first: {safe_check}. Then ask one short clarifying question before giving detailed troubleshooting steps. Do not pretend you verified an article."
         )
 
     best_result = result.get("best_result") or {}
@@ -1410,14 +1431,15 @@ def _build_knowledge_grounding_hint(result: dict[str, Any]) -> str:
     guidance = [
         f"Knowledge grounding update from {backend} for your next answer.",
         "Tell the caller you found guidance in the knowledge base, then explain it naturally like a strong human support engineer.",
+        "Do not mention the article title or source name out loud unless the caller explicitly asks.",
         f"Use the retrieved results as the source of truth for product-specific facts and next steps. Query used: `{query}`.",
     ]
     if response_mode == "answer_directly":
-        guidance.append("The retrieval confidence is strong enough to answer directly.")
+        guidance.append("The retrieval confidence is strong. Give only the first one or two steps, then pause for confirmation.")
     elif response_mode == "answer_and_confirm":
-        guidance.append("Give the most likely next step, then confirm one key detail with the caller.")
+        guidance.append("Give a brief explanation, then only the first one or two steps, then confirm one key detail with the caller.")
     else:
-        guidance.append("Ask one targeted clarifying question before giving detailed steps.")
+        guidance.append(f"Give one safe preliminary check first: {safe_check}. Then ask one targeted clarifying question before giving detailed steps.")
 
     if result.get("conflict"):
         conflict_summary = str(result.get("conflict_summary") or "").strip()
@@ -1894,6 +1916,7 @@ async def handle_media_stream(websocket: WebSocket):
         last_context_hint_signature = ""
         last_user_input_signature = ""
         last_user_input_signature_at = 0.0
+        pending_user_turn_task: asyncio.Task[None] | None = None
         response_done_event = asyncio.Event()
         response_done_event.set()
         call_state = CallState(assistant_name=ASSISTANT_NAME, support_product=SUPPORT_PRODUCT)
@@ -1945,6 +1968,12 @@ async def handle_media_stream(websocket: WebSocket):
                 pending_interrupt_task.cancel()
             pending_interrupt_task = None
 
+        def cancel_pending_user_turn() -> None:
+            nonlocal pending_user_turn_task
+            if pending_user_turn_task is not None and not pending_user_turn_task.done():
+                pending_user_turn_task.cancel()
+            pending_user_turn_task = None
+
         async def schedule_interrupt() -> None:
             nonlocal pending_interrupt_task
             cancel_pending_interrupt()
@@ -1982,6 +2011,8 @@ async def handle_media_stream(websocket: WebSocket):
             if wait_for_previous:
                 await response_done_event.wait()
             response_done_event.clear()
+            if reason in {"knowledge-bridge", "knowledge-answer", "direct-answer"}:
+                call_logger.info("Assistant response started phase=%s", reason)
             if LOG_TOOL_PAYLOADS:
                 call_logger.debug("Creating assistant response reason=%s", reason)
             try:
@@ -2004,6 +2035,11 @@ async def handle_media_stream(websocket: WebSocket):
                 return
 
             product_area = _best_product_area_hint(call_state)
+            call_logger.info(
+                "Knowledge bridge starting product_area=%s query=%s",
+                product_area or "",
+                _safe_preview(query, limit=220),
+            )
             lookup_task = asyncio.create_task(
                 _knowledge_lookup(query, product_area, call_logger),
                 name="knowledge-prefetch",
@@ -2017,11 +2053,54 @@ async def handle_media_stream(websocket: WebSocket):
             best_title = str(best_result.get("title") or "").strip()
             if best_title:
                 _append_unique(call_state.grounding_notes, f"Knowledge base match: {best_title}", limit=4)
-            await send_system_message(_build_knowledge_grounding_hint(grounding), "knowledge grounding")
+            call_logger.info(
+                "Knowledge answer starting best_title=%s confidence=%s response_mode=%s",
+                _safe_preview(best_title, limit=160),
+                grounding.get("best_confidence"),
+                grounding.get("response_mode"),
+            )
+            await send_system_message(_build_knowledge_grounding_hint(grounding, call_state), "knowledge grounding")
             await request_assistant_response("knowledge-answer")
 
-        async def handle_transcribed_user_turn(event: dict[str, Any], transcript: str) -> None:
-            nonlocal last_user_input_signature, last_user_input_signature_at
+        async def handle_transcribed_user_turn(transcript: str) -> None:
+            try:
+                route_changed = call_state.apply_user_transcript(transcript)
+                if route_changed:
+                    _append_unique(
+                        call_state.confirmed_facts,
+                        f"Routed issue family: {call_state.routed_issue_label}",
+                    )
+                call_logger.info(
+                    "Caller transcript received; routed as %s; frustration=%s",
+                    call_state.routed_issue_family,
+                    call_state.frustration_level,
+                )
+                if LOG_CALL_TRANSCRIPTS:
+                    call_logger.debug(
+                        "Caller transcript=%s route_changed=%s off_topic=%s reason=%s context=%s",
+                        _safe_preview(transcript, limit=400),
+                        route_changed,
+                        call_state.off_topic_detected,
+                        call_state.off_topic_reason,
+                        _safe_preview(call_state.summary_text(), limit=500),
+                    )
+
+                await maybe_send_call_context_hint()
+                if _should_search_before_answer(call_state):
+                    await run_search_first_response()
+                    return
+
+                await send_system_message(_build_direct_response_hint(call_state), "direct answer")
+                await request_assistant_response("direct-answer")
+            except asyncio.CancelledError:
+                if LOG_CALL_TRANSCRIPTS:
+                    call_logger.debug("Cancelled pending user turn handling")
+                raise
+            except Exception:
+                call_logger.exception("User turn handler failed")
+
+        def schedule_transcribed_user_turn(event: dict[str, Any], transcript: str) -> None:
+            nonlocal last_user_input_signature, last_user_input_signature_at, pending_user_turn_task
             item_id = _extract_event_item_id(event)
             normalized_transcript = _normalize_text(transcript)
             signature = item_id or normalized_transcript
@@ -2033,35 +2112,11 @@ async def handle_media_stream(websocket: WebSocket):
 
             last_user_input_signature = signature
             last_user_input_signature_at = now
-
-            route_changed = call_state.apply_user_transcript(transcript)
-            if route_changed:
-                _append_unique(
-                    call_state.confirmed_facts,
-                    f"Routed issue family: {call_state.routed_issue_label}",
-                )
-            call_logger.info(
-                "Caller transcript received; routed as %s; frustration=%s",
-                call_state.routed_issue_family,
-                call_state.frustration_level,
+            cancel_pending_user_turn()
+            pending_user_turn_task = asyncio.create_task(
+                handle_transcribed_user_turn(transcript),
+                name="handle-user-turn",
             )
-            if LOG_CALL_TRANSCRIPTS:
-                call_logger.debug(
-                    "Caller transcript=%s route_changed=%s off_topic=%s reason=%s context=%s",
-                    _safe_preview(transcript, limit=400),
-                    route_changed,
-                    call_state.off_topic_detected,
-                    call_state.off_topic_reason,
-                    _safe_preview(call_state.summary_text(), limit=500),
-                )
-
-            await maybe_send_call_context_hint()
-            if _should_search_before_answer(call_state):
-                await run_search_first_response()
-                return
-
-            await send_system_message(_build_direct_response_hint(call_state), "direct answer")
-            await request_assistant_response("direct-answer")
 
         async def handle_tool_call(item: dict[str, Any]) -> None:
             call_id = item.get("call_id")
@@ -2125,7 +2180,7 @@ async def handle_media_stream(websocket: WebSocket):
                 best_title = str(best_result.get("title") or "").strip()
                 if best_title:
                     _append_unique(call_state.grounding_notes, f"Knowledge base match: {best_title}", limit=4)
-                await send_system_message(_build_knowledge_grounding_hint(tool_output), "knowledge grounding")
+                await send_system_message(_build_knowledge_grounding_hint(tool_output, call_state), "knowledge grounding")
             await request_assistant_response(f"tool:{tool_name}", wait_for_previous=False)
 
         async def maybe_send_call_context_hint() -> None:
@@ -2179,6 +2234,7 @@ async def handle_media_stream(websocket: WebSocket):
                         last_context_hint_signature = ""
                         last_user_input_signature = ""
                         last_user_input_signature_at = 0.0
+                        cancel_pending_user_turn()
                         response_done_event.set()
                         cancel_pending_interrupt()
                         mark_queue.clear()
@@ -2220,6 +2276,7 @@ async def handle_media_stream(websocket: WebSocket):
                         call_logger.info("Twilio sent stop; closing")
                         if LOG_TWILIO_MEDIA_EVENTS:
                             call_logger.debug("Twilio stop payload=%s", _safe_preview(data, limit=300))
+                        cancel_pending_user_turn()
                         cancel_pending_interrupt()
                         await openai_ws.close()
                         return
@@ -2227,6 +2284,7 @@ async def handle_media_stream(websocket: WebSocket):
             except WebSocketDisconnect:
                 call_logger.info("Twilio WS disconnected")
             finally:
+                cancel_pending_user_turn()
                 cancel_pending_interrupt()
                 with suppress(Exception):
                     await openai_ws.close()
@@ -2287,7 +2345,7 @@ async def handle_media_stream(websocket: WebSocket):
                     }:
                         transcript = _extract_transcript_text(event)
                         if transcript:
-                            await handle_transcribed_user_turn(event, transcript)
+                            schedule_transcribed_user_turn(event, transcript)
                         continue
 
                     if event_type in {
@@ -2343,6 +2401,7 @@ async def handle_media_stream(websocket: WebSocket):
             except Exception:
                 call_logger.exception("Error forwarding OpenAI -> Twilio")
             finally:
+                cancel_pending_user_turn()
                 cancel_pending_interrupt()
                 with suppress(Exception):
                     await websocket.close()
