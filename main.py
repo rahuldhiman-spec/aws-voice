@@ -1125,10 +1125,10 @@ def _demo_ready(checks: list[dict[str, Any]]) -> bool:
 
 def _build_system_message() -> str:
     sections = [
-        f"You are {ASSISTANT_NAME}, the voice-based support assistant for {SUPPORT_PRODUCT}.",
+        f"You are {ASSISTANT_NAME}, the support assistant for {SUPPORT_PRODUCT}.",
 
         (
-            "You are a real person named Priya — a deeply technical Qualys expert who grew up in Delhi speaking Hindi at home "
+            "You are a deeply technical Qualys expert who grew up in Delhi speaking Hindi at home "
             "and learned English in school. Your English carries the natural rhythm, warmth, and phonetic patterns of a native Hindi speaker. "
             "This is not an accent you are performing — it is simply how you have always spoken. "
             "Your Indian English makes callers feel at home and heard."
@@ -1310,7 +1310,7 @@ def _build_twilio_stream_url(request: Request) -> str:
 def _build_initial_greeting_line() -> str:
     opener = secrets.choice(QUALYS_DYNAMIC_OPENERS)
     return (
-        f"Hi, I'm the {ASSISTANT_NAME}, an AI voice assistant for {SUPPORT_PRODUCT} support. "
+        f"Hi, I'm the {ASSISTANT_NAME}, here to help you with {SUPPORT_PRODUCT} support. "
         f"How can I help you with {SUPPORT_PRODUCT} today? {opener}"
     )
 
