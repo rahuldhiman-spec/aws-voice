@@ -199,7 +199,7 @@ function getFunctionCallsFromResponse(event) {
 }
 
 async function syncTranscriptContext(transcript) {
-  const data = await fetchJson("/api/context/transcript", {
+  const data = await fetchJson("/socket/socket/api/context/transcript", {
     method: "POST",
     body: JSON.stringify({
       session_id: state.sessionId,
@@ -225,7 +225,7 @@ async function invokeTool(name, args) {
   }
 
   if (name === "remember_call_context") {
-    const result = await fetchJson("/api/tool/remember-context", {
+    const result = await fetchJson("/socket/api/tool/remember-context", {
       method: "POST",
       body: JSON.stringify({
         session_id: state.sessionId,
@@ -238,7 +238,7 @@ async function invokeTool(name, args) {
   }
 
   if (name === "get_call_context") {
-    const result = await fetchJson("/api/tool/get-context", {
+    const result = await fetchJson("/socket/api/tool/get-context", {
       method: "POST",
       body: JSON.stringify({
         session_id: state.sessionId,
@@ -251,7 +251,7 @@ async function invokeTool(name, args) {
 
   if (name === "search_qualys_support_knowledge") {
     setBadge("Checking SearchUnify", "search");
-    const result = await fetchJson("/api/tool/search", {
+    const result = await fetchJson("/socket/api/tool/search", {
       method: "POST",
       body: JSON.stringify({
         session_id: state.sessionId,
@@ -437,12 +437,12 @@ async function connect() {
 
     state.sessionId = generateSessionId();
     refs.sessionIdValue.textContent = state.sessionId;
-    await fetchJson("/api/session/reset", {
+    await fetchJson("/socket/api/session/reset", {
       method: "POST",
       body: JSON.stringify({ session_id: state.sessionId }),
     });
 
-    state.config = await fetchJson("/api/realtime-config");
+    state.config = await fetchJson("/socket/api/realtime-config");
     refs.assistantChip.textContent = state.config.assistant_name || "Aira";
     refs.modelChip.textContent = state.config.model || "gpt-realtime";
     refs.voiceChip.textContent = state.config.voice || "unknown";
@@ -544,7 +544,7 @@ async function connect() {
 async function disconnect(resetSession = true) {
   try {
     if (resetSession && state.sessionId) {
-      await fetchJson("/api/session/reset", {
+      await fetchJson("/socket/api/session/reset", {
         method: "POST",
         body: JSON.stringify({ session_id: state.sessionId }),
       });
@@ -616,7 +616,7 @@ function toggleMute() {
 
 async function bootstrap() {
   try {
-    state.health = await fetchJson("/health");
+    state.health = await fetchJson("/socket/health");
     refs.assistantChip.textContent = state.health.assistant_name || refs.assistantChip.textContent;
     refs.modelChip.textContent = state.health.model || refs.modelChip.textContent;
     refs.voiceChip.textContent = state.health.voice || refs.voiceChip.textContent;
