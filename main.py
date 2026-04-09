@@ -246,6 +246,7 @@ SEARCH_FIRST_PATTERNS = (
     "exact troubleshooting",
     "exact steps",
     "step by step",
+    "vulnerability details",
     "troubleshooting steps",
     "what are the steps",
     "what should i check",
@@ -537,7 +538,7 @@ def _rewrite_support_query(query: str, product_area: str | None) -> str:
 def _build_searchunify_payload(query: str) -> dict[str, Any]:
     search_uid = SEARCHUNIFY_SEARCH_UID or str(uuid.uuid4())
     return {
-        "storeContext": True,
+        "storeContext": False,
         "langAttr": "",
         "react": 1,
         "isRecommendationsWidget": False,
@@ -1178,7 +1179,7 @@ def _build_system_message() -> str:
         (
             "You help with Qualys support topics: scans, VMDR, Cloud Agent, scanner appliances, tags, asset inventory, "
             "detections, authentication records, APIs, connectors, and integrations. "
-            "If the caller describes something informally, rephrase it into proper Qualys terminology before troubleshooting."
+            "If the caller describes something informally, rephrase it into proper Qualys terminology before troubleshooting, Dont mix things up and dont make assumption VMDR, WAS, Just clarify from the user if ambiguity."
         ),
 
         (
