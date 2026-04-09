@@ -37,23 +37,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _env_list(name: str, default: list[str]) -> list[str]:
-    raw = (os.getenv(name) or "").strip()
-    if not raw:
-        return list(default)
-    if raw.startswith("["):
-        try:
-            values = json.loads(raw)
-        except json.JSONDecodeError:
-            return list(default)
-        if isinstance(values, list):
-            cleaned = [str(item).strip() for item in values if str(item).strip()]
-            return cleaned or list(default)
-        return list(default)
-    cleaned = [item.strip() for item in raw.split("|") if item.strip()]
-    return cleaned or list(default)
-
-
 _JSON_DUMPS_KWARGS: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
 
 
@@ -148,156 +131,6 @@ LOG_EVENT_TYPES = {
     "session.updated",
 }
 
-DEFAULT_DYNAMIC_OPENERS = [
-    "Is your scan getting stuck in the middle?",
-    "Are you having trouble integrating Qualys with another platform?",
-    "Is your Cloud Agent not checking in?",
-    "Are some assets missing from VMDR or Asset Inventory?",
-    "Is an authentication record failing or returning incomplete results?",
-    "Are you troubleshooting a scanner appliance, connector, or API issue?",
-    "Are detections, tags, or reports not behaving the way you expect?",
-    "Are you seeing problems with a ServiceNow, Jira, SIEM, or Splunk integration?",
-]
-QUALYS_DYNAMIC_OPENERS = _env_list("QUALYS_DYNAMIC_OPENERS", DEFAULT_DYNAMIC_OPENERS)
-
-ISSUE_FAMILY_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "scan": ("scan", "scanning", "scanner", "scanner appliance", "scheduled scan", "scan stuck", "scan failed"),
-    "vmdr": ("vmdr", "vulnerability", "detection", "qid", "remediation", "patch", "findings"),
-    "cloud_agent": ("cloud agent", "agent", "agent check-in", "agent activation", "agent not reporting"),
-    "asset_visibility": ("asset inventory", "asset visibility", "missing asset", "host asset", "inventory"),
-    "authentication": ("authentication", "auth", "auth record", "credential", "login failed", "unix auth", "windows auth"),
-    "integration": ("servicenow", "jira", "splunk", "siem", "integration", "connector", "webhook", "ticket"),
-    "api": ("api", "endpoint", "token", "postman", "curl", "sdk", "xml api"),
-    "tagging": ("tag", "tags", "dynamic tag", "tagging", "rule engine"),
-    "reporting": ("report", "dashboard", "widget", "export", "pdf", "csv"),
-}
-ISSUE_FAMILY_LABELS = {
-    "scan": "a Qualys scan execution issue",
-    "vmdr": "a Qualys VMDR or vulnerability detection issue",
-    "cloud_agent": "a Qualys Cloud Agent issue",
-    "asset_visibility": "a Qualys asset visibility or Asset Inventory issue",
-    "authentication": "a Qualys authentication record issue",
-    "integration": "a Qualys integration or connector issue",
-    "api": "a Qualys API issue",
-    "tagging": "a Qualys tagging issue",
-    "reporting": "a Qualys reporting issue",
-    "general": "a Qualys support issue",
-}
-INTEGRATION_TARGETS = ("servicenow", "jira", "splunk", "sumo logic", "qradar", "siem", "snowflake", "slack")
-FRUSTRATION_PATTERNS = {
-    "high": ("not working", "still not working", "nothing works", "fed up", "frustrated", "urgent", "asap"),
-    "medium": ("issue", "problem", "stuck", "again", "same error", "failing", "broken"),
-}
-QUALYS_DOMAIN_HINTS = (
-    "qualys",
-    "scan",
-    "scanner",
-    "cloud agent",
-    "agent",
-    "vmdr",
-    "vulnerability",
-    "qid",
-    "detection",
-    "asset inventory",
-    "asset",
-    "auth record",
-    "authentication",
-    "credential",
-    "tag",
-    "report",
-    "dashboard",
-    "servicenow",
-    "jira",
-    "splunk",
-    "siem",
-    "api",
-    "connector",
-    "integration",
-)
-OFF_TOPIC_PATTERNS = (
-    "weather",
-    "news",
-    "headline",
-    "stock price",
-    "bitcoin",
-    "crypto",
-    "sports",
-    "match score",
-    "movie",
-    "music",
-    "recipe",
-    "travel",
-    "politics",
-    "president",
-    "celebrity",
-    "horoscope",
-    "joke",
-    "funny",
-    "story",
-    "poem",
-    "sing a song",
-    "girlfriend",
-    "boyfriend",
-    "dating",
-    "sex",
-    "romantic",
-)
-SEARCH_FIRST_PATTERNS = (
-    "exact troubleshooting",
-    "exact steps",
-    "step by step",
-    "vulnerability details",
-    "troubleshooting steps",
-    "what are the steps",
-    "what should i check",
-    "what do i check",
-    "error code",
-    "what does this error",
-    "what does the error",
-    "api",
-    "endpoint",
-    "payload",
-    "request body",
-    "response body",
-    "header",
-    "connector",
-    "integration",
-    "servicenow",
-    "jira",
-    "splunk",
-    "product fact",
-    "supported",
-    "limit",
-    "version",
-)
-SEARCH_COMPONENT_HINTS: dict[str, tuple[str, ...]] = {
-    "scan": ("scanner appliance", "scan profile", "option profile", "authentication"),
-    "vmdr": ("detection", "qid", "knowledgebase", "finding"),
-    "cloud_agent": ("cloud agent", "agent check-in", "agent activation", "manifest", "proxy"),
-    "asset_visibility": ("asset inventory", "sync", "asset tagging"),
-    "authentication": ("authentication record", "credential", "vault", "login"),
-    "integration": ("connector", "integration", "job", "mapping", "webhook"),
-    "api": ("api", "endpoint", "token", "header", "payload"),
-    "tagging": ("tag", "dynamic tag", "rule engine"),
-    "reporting": ("report", "dashboard", "widget", "export"),
-}
-SEARCH_SYMPTOM_PATTERNS = (
-    "not checking in",
-    "not reporting",
-    "not syncing",
-    "not showing",
-    "missing",
-    "failed",
-    "failing",
-    "timeout",
-    "timed out",
-    "connection refused",
-    "unauthorized",
-    "forbidden",
-    "invalid token",
-    "access denied",
-    "error",
-)
 SUPPORTED_REALTIME_VOICES = ("aira", "marin", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
 SEARCHUNIFY_HIGHLIGHT_START = "___su-highlight-start___"
 SEARCHUNIFY_HIGHLIGHT_END = "___su-highlight-end___"
@@ -487,52 +320,98 @@ def _extract_error_tokens(text: str) -> list[str]:
     return _dedupe_preserve_order(matches, limit=4)
 
 
-def _extract_search_symptoms(text: str) -> list[str]:
-    lowered = text.lower()
-    return [pattern for pattern in SEARCH_SYMPTOM_PATTERNS if pattern in lowered]
+def _clean_human_transcript(text: str) -> str:
+    collapsed = " ".join(text.strip().split())
+    if not collapsed:
+        return ""
 
-
-def _extract_search_components(text: str, routed_family: str, product_area: str | None = None) -> list[str]:
-    lowered = text.lower()
-    component_family = routed_family
-    product_area_key = (product_area or "").strip().lower().replace(" ", "_")
-    if product_area_key in SEARCH_COMPONENT_HINTS:
-        component_family = product_area_key
-
-    candidates = list(SEARCH_COMPONENT_HINTS.get(component_family, ()))
-    if "scanner" in lowered:
-        candidates.append("scanner appliance")
-    if "connector" in lowered:
-        candidates.append("connector")
-    if any(target in lowered for target in INTEGRATION_TARGETS):
-        candidates.append("integration")
-    return [
-        value
-        for value in _dedupe_preserve_order(candidates, limit=4)
-        if value in lowered or value in SEARCH_COMPONENT_HINTS.get(component_family, ())
-    ]
+    lowered = collapsed.lower()
+    lowered = re.sub(
+        r"\b(?:uh+|um+|umm+|hmm+|ah+|oh+|okay+|ok+|acha|actually|basically|literally|please|plz|just|kind of|sort of|you know|i mean)\b",
+        " ",
+        lowered,
+    )
+    lowered = re.sub(
+        r"\b(?:hi|hello|hey|thanks|thank you|can you help|could you help|i need help|need help)\b",
+        " ",
+        lowered,
+    )
+    lowered = re.sub(r"[^\w\s/-]", " ", lowered)
+    lowered = re.sub(r"\b(\w+)(?:\s+\1\b)+", r"\1", lowered)
+    return " ".join(lowered.split())
 
 
 def _rewrite_support_query(query: str, product_area: str | None) -> str:
-    base_query = " ".join(query.strip().split())
-    if not base_query:
-        return base_query
+    cleaned = _clean_human_transcript(query)
+    source_text = cleaned or " ".join(query.strip().split()).lower()
+    if not source_text:
+        return ""
 
-    routed_family, _ = _route_issue_family(f"{base_query} {product_area or ''}")
-    product_area_value = (product_area or "").strip().replace("_", " ")
-    if not product_area_value and routed_family != "general":
-        product_area_value = routed_family.replace("_", " ")
+    phrase_patterns = (
+        "cloud agent",
+        "asset inventory",
+        "asset visibility",
+        "auth record",
+        "authentication record",
+        "scanner appliance",
+        "service now",
+        "servicenow",
+        "sumo logic",
+        "api token",
+        "scan profile",
+        "option profile",
+    )
+    preserved_phrases = [phrase for phrase in phrase_patterns if phrase in source_text]
+    error_tokens = _extract_error_tokens(query)
+    stopwords = {
+        "a",
+        "an",
+        "and",
+        "are",
+        "be",
+        "for",
+        "from",
+        "get",
+        "got",
+        "have",
+        "having",
+        "help",
+        "i",
+        "im",
+        "is",
+        "it",
+        "me",
+        "my",
+        "of",
+        "on",
+        "our",
+        "please",
+        "the",
+        "this",
+        "to",
+        "we",
+        "with",
+        "you",
+        "your",
+    }
+    raw_tokens = re.findall(r"[a-z0-9][a-z0-9_/-]*", source_text)
+    keywords = [
+        token
+        for token in raw_tokens
+        if len(token) > 1 and token not in stopwords and token not in SUPPORT_PRODUCT.lower().split()
+    ]
 
-    keyword_segments: list[str] = [SUPPORT_PRODUCT]
-    if product_area_value:
-        keyword_segments.append(product_area_value)
-
-    keyword_segments.extend(_extract_error_tokens(base_query))
-    keyword_segments.extend(_extract_search_components(base_query, routed_family, product_area_value))
-    keyword_segments.extend(_extract_search_symptoms(base_query))
-    keyword_segments.append(base_query)
-
-    return " ".join(_dedupe_preserve_order([segment for segment in keyword_segments if segment], limit=8))
+    segments: list[str] = []
+    if product_area:
+        segments.append(product_area.strip().lower().replace("_", " "))
+    segments.extend(preserved_phrases)
+    segments.extend(error_tokens)
+    segments.extend(keywords)
+    compact = _dedupe_preserve_order([segment for segment in segments if segment], limit=7)
+    if compact:
+        return " ".join(compact)
+    fallback_tokens = _dedupe_preserve_order(raw_tokens, limit=7)
+    return " ".join(fallback_tokens)
 
 
 def _build_searchunify_payload(query: str) -> dict[str, Any]:
@@ -821,45 +700,6 @@ def _build_grounding_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _route_issue_family(text: str) -> tuple[str, str]:
-    lowered = text.lower()
-    best_family = "general"
-    best_score = 0
-    for family, keywords in ISSUE_FAMILY_KEYWORDS.items():
-        score = sum(1 for keyword in keywords if keyword in lowered)
-        if score > best_score:
-            best_family = family
-            best_score = score
-    return best_family, ISSUE_FAMILY_LABELS[best_family]
-
-
-def _extract_integration_targets(text: str) -> list[str]:
-    lowered = text.lower()
-    return [target.title() for target in INTEGRATION_TARGETS if target in lowered]
-
-
-def _detect_frustration(text: str) -> str:
-    lowered = text.lower()
-    for level in ("high", "medium"):
-        if any(phrase in lowered for phrase in FRUSTRATION_PATTERNS[level]):
-            return level
-    return "low"
-
-
-def _detect_off_topic(text: str, routed_family: str, integration_targets: list[str]) -> tuple[bool, str]:
-    lowered = text.lower().strip()
-    if not lowered:
-        return False, ""
-    if routed_family != "general" or integration_targets:
-        return False, ""
-    if any(hint in lowered for hint in QUALYS_DOMAIN_HINTS):
-        return False, ""
-    matched = [pattern for pattern in OFF_TOPIC_PATTERNS if pattern in lowered]
-    if matched:
-        return True, f"Detected non-Qualys topic: {matched[0]}"
-    return False, ""
-
-
 def _build_transcription_prompt() -> str:
     return (
         "Phone support call about Qualys. Expect terms like Qualys, VMDR, Cloud Agent, Asset Inventory, "
@@ -875,9 +715,6 @@ VOICE = _resolve_realtime_voice(VOICE)
 class CallState:
     assistant_name: str
     support_product: str
-    routed_issue_family: str = "general"
-    routed_issue_label: str = ISSUE_FAMILY_LABELS["general"]
-    routing_reason: str = ""
     product_area: str = ""
     issue_summary: str = ""
     user_goal: str = ""
@@ -885,61 +722,28 @@ class CallState:
     company: str = ""
     environment: str = ""
     error_text: str = ""
-    frustration_level: str = "low"
-    off_topic_detected: bool = False
-    off_topic_reason: str = ""
-    off_topic_turns: int = 0
     last_user_transcript: str = ""
     last_assistant_transcript: str = ""
     user_turns: int = 0
     assistant_turns: int = 0
     confirmed_facts: list[str] = field(default_factory=list)
     tried_steps: list[str] = field(default_factory=list)
-    integration_targets: list[str] = field(default_factory=list)
-    grounding_notes: list[str] = field(default_factory=list)
-    summary_history: list[str] = field(default_factory=list)
 
-    def apply_user_transcript(self, transcript: str) -> bool:
+    def apply_user_transcript(self, transcript: str) -> None:
         self.last_user_transcript = transcript.strip()
         if not self.last_user_transcript:
-            return False
+            return
 
         self.user_turns += 1
-        _append_unique(self.summary_history, self.last_user_transcript, limit=4)
-
-        routed_family, routed_label = _route_issue_family(self.last_user_transcript)
-        route_changed = False
-        if routed_family != "general" and routed_family != self.routed_issue_family:
-            self.routed_issue_family = routed_family
-            self.routed_issue_label = routed_label
-            self.routing_reason = "keyword routing from caller transcript"
-            if not self.product_area:
-                self.product_area = routed_family
-            route_changed = True
-
-        for target in _extract_integration_targets(self.last_user_transcript):
-            _append_unique(self.integration_targets, target)
-
-        frustration = _detect_frustration(self.last_user_transcript)
-        if frustration == "high" or (frustration == "medium" and self.frustration_level == "low"):
-            self.frustration_level = frustration
-
-        off_topic_detected, off_topic_reason = _detect_off_topic(
-            self.last_user_transcript,
-            self.routed_issue_family,
-            self.integration_targets,
-        )
-        self.off_topic_detected = off_topic_detected
-        self.off_topic_reason = off_topic_reason
-        if off_topic_detected:
-            self.off_topic_turns += 1
-
-        if not self.issue_summary:
+        cleaned_summary = _clean_human_transcript(self.last_user_transcript)
+        if cleaned_summary:
+            self.issue_summary = cleaned_summary
+        elif not self.issue_summary:
             self.issue_summary = self.last_user_transcript
 
-        return route_changed
-
     def remember_context(self, payload: dict[str, Any]) -> None:
+        logger.info("CallState.remember_context - Remembering context from payload: %s", 
+                   {k: _safe_preview(str(v), limit=50) for k, v in payload.items() if v})
         mappings = {
             "caller_name": "caller_name",
             "company": "company",
@@ -948,40 +752,31 @@ class CallState:
             "user_goal": "user_goal",
             "environment": "environment",
             "error_text": "error_text",
-            "frustration_level": "frustration_level",
         }
         for key, attr in mappings.items():
             value = str(payload.get(key) or "").strip()
             if value:
+                logger.debug("CallState.remember_context - Setting %s to '%s'", attr, _safe_preview(value, limit=100))
                 setattr(self, attr, value)
 
-        issue_family = str(payload.get("issue_family") or "").strip().lower()
-        if issue_family in ISSUE_FAMILY_LABELS:
-            self.routed_issue_family = issue_family
-            self.routed_issue_label = ISSUE_FAMILY_LABELS[issue_family]
-            self.routing_reason = "assistant tool classification"
-
         for field_name, target_list in (
-            ("integration_target", self.integration_targets),
             ("confirmed_fact", self.confirmed_facts),
             ("tried_step", self.tried_steps),
-            ("grounding_note", self.grounding_notes),
         ):
             value = str(payload.get(field_name) or "").strip()
             if value:
+                logger.debug("CallState.remember_context - Adding to %s: '%s'", field_name, _safe_preview(value, limit=100))
                 _append_unique(target_list, value)
 
         step_result = str(payload.get("step_result") or "").strip()
         if step_result and self.tried_steps:
+            logger.debug("CallState.remember_context - Adding step result: '%s'", _safe_preview(step_result, limit=100))
             _append_unique(self.confirmed_facts, f"Step result: {step_result}")
 
     def as_tool_payload(self) -> dict[str, Any]:
         return {
             "assistant_name": self.assistant_name,
             "support_product": self.support_product,
-            "routed_issue_family": self.routed_issue_family,
-            "routed_issue_label": self.routed_issue_label,
-            "routing_reason": self.routing_reason,
             "product_area": self.product_area,
             "issue_summary": self.issue_summary,
             "user_goal": self.user_goal,
@@ -989,11 +784,6 @@ class CallState:
             "company": self.company,
             "environment": self.environment,
             "error_text": self.error_text,
-            "frustration_level": self.frustration_level,
-            "off_topic_detected": self.off_topic_detected,
-            "off_topic_reason": self.off_topic_reason,
-            "off_topic_turns": self.off_topic_turns,
-            "integration_targets": list(self.integration_targets),
             "confirmed_facts": list(self.confirmed_facts),
             "tried_steps": list(self.tried_steps),
             "user_turns": self.user_turns,
@@ -1003,23 +793,19 @@ class CallState:
         }
 
     def summary_text(self) -> str:
-        details = [
-            f"Caller is speaking with {self.assistant_name} about {self.support_product}.",
-            f"Current routed issue: {self.routed_issue_label}.",
-        ]
+        details = [f"Caller is speaking with {self.assistant_name} about {self.support_product}."]
+        if self.product_area:
+            details.append(f"Product area: {self.product_area}")
         if self.issue_summary:
             details.append(f"Working summary: {self.issue_summary}")
         if self.user_goal:
             details.append(f"User goal: {self.user_goal}")
-        if self.integration_targets:
-            details.append(f"Integrations mentioned: {', '.join(self.integration_targets)}")
         if self.confirmed_facts:
             details.append(f"Confirmed facts: {'; '.join(self.confirmed_facts[-3:])}")
         if self.tried_steps:
             details.append(f"Tried steps: {'; '.join(self.tried_steps[-3:])}")
-        if self.off_topic_detected and self.off_topic_reason:
-            details.append(f"Guardrail note: {self.off_topic_reason}")
-        details.append(f"Frustration level: {self.frustration_level}")
+        if self.error_text:
+            details.append(f"Error text: {self.error_text}")
         return " ".join(details)
 
 
@@ -1228,33 +1014,34 @@ def _build_system_message() -> str:
         ),
 
         (
-            "When the likely answer is already clear from the live conversation, answer directly without searching first. "
-            "Sound natural and expert: a quick explanation plus one next step — no long monologues."
+            "When you answer, never narrate your internal search or verification steps. "
+            "Just answer naturally, like you already understand the issue."
         ),
 
         (
-            "If SearchUnify or another support knowledge source is available, use it only when needed — "
-            "when you are uncertain, when the issue is ambiguous, or when the caller wants exact steps, error-code meaning, "
-            "API details, integration details, or product-specific facts."
+            "If SearchUnify or another support knowledge source is available, use it silently in the background on every real support turn. "
+            "Do not tell the caller you are searching or checking a source."
         ),
 
         (
-            "Before checking the knowledge base, give one short casual transition so there is no dead pause — "
-            "like 'Okay... this sounds like the connector side, let me just quickly check the exact path for you'."
+            "Convert noisy caller wording into a clean issue summary in your head. "
+            "Reduce filler words, hesitation, and repeated words before reasoning about the issue."
         ),
 
         (
-            "If you find guidance in the knowledge base, say that briefly and explain it naturally in plain human language. "
-            "If the guidance is weak or conflicting, give one safe preliminary check first and ask one targeted clarifying question. "
-            "If the guidance is strong but long, give only the first one or two steps and pause for confirmation. "
-            "Trust grounded knowledge-base guidance over your earlier assumption when they conflict."
+            "Use grounded support guidance silently. "
+            "Answer directly in plain human language. "
+            "If the guidance is weak or conflicting, give one safe first check and ask one short clarifying question. "
+            "If the guidance is strong but long, give only the first one or two steps and pause for confirmation."
         ),
 
         (
             "If the caller interrupts, stop immediately and respond to the new words right away. "
             "Do not finish your previous sentence. "
             "Do not over-acknowledge the interruption. "
-            "Only return to the earlier point later if it is still helpful."
+            "Only return to the earlier point later if it is still helpful. "
+            "On interruption, drop the old line of thought and move with the new information. "
+            "Give zero indication you are using a knowledge base. Do not mention SearchUnify or any other tool by name."
         ),
 
         (
@@ -1299,10 +1086,9 @@ def _build_twilio_stream_url(request: Request) -> str:
 
 
 def _build_initial_greeting_line() -> str:
-    opener = secrets.choice(QUALYS_DYNAMIC_OPENERS)
     return (
-        f"Hi, I'm the {ASSISTANT_NAME}, here to help you with {SUPPORT_PRODUCT} support. "
-        f"How can I help you with {SUPPORT_PRODUCT} today? {opener}"
+        f"Hi, I am {ASSISTANT_NAME} from {SUPPORT_PRODUCT} support. "
+        "Tell me what is happening, and I will help you."
     )
 
 
@@ -1318,7 +1104,6 @@ def _build_realtime_tools() -> list[dict[str, Any]]:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "issue_family": {"type": "string"},
                     "product_area": {"type": "string"},
                     "issue_summary": {"type": "string"},
                     "user_goal": {"type": "string"},
@@ -1326,12 +1111,9 @@ def _build_realtime_tools() -> list[dict[str, Any]]:
                     "company": {"type": "string"},
                     "environment": {"type": "string"},
                     "error_text": {"type": "string"},
-                    "integration_target": {"type": "string"},
-                    "frustration_level": {"type": "string"},
                     "confirmed_fact": {"type": "string"},
                     "tried_step": {"type": "string"},
                     "step_result": {"type": "string"},
-                    "grounding_note": {"type": "string"},
                 },
                 "additionalProperties": False,
             },
@@ -1351,15 +1133,15 @@ def _build_realtime_tools() -> list[dict[str, Any]]:
             "name": "search_qualys_support_knowledge",
             "description": (
                 "Search SearchUnify or another configured support knowledge source for Qualys-specific troubleshooting steps, "
-                "terminology, error explanations, APIs, connector guidance, or integration help. Use this when you need exact grounded guidance, "
-                "when the caller wants product-specific facts or exact steps, or when you are uncertain and need to verify the correct path."
+                "terminology, error explanations, APIs, connector guidance, or integration help. "
+                "Use a compact cleaned keyword query and rely on the result silently in the background."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The user's issue in natural language, rewritten with the important Qualys terms preserved.",
+                        "description": "A compact cleaned support query, ideally 6 to 7 keywords, with the important Qualys terms preserved.",
                     },
                     "product_area": {
                         "type": "string",
@@ -1382,88 +1164,25 @@ def _estimate_pcmu_audio_ms(base64_payload: str) -> int:
     return int(round((len(audio_bytes) / 8000) * 1000))
 
 
-def _build_call_context_hint(call_state: CallState) -> str:
-    if call_state.off_topic_detected:
-        return (
-            "Guardrail reminder: the caller's latest request is off-topic for this assistant. "
-            "Do not answer it. Politely refuse in one short sentence, say you only handle Qualys support and Qualys integrations, "
-            "and redirect the caller to describe their Qualys issue. Do not joke, banter, or continue the off-topic topic."
-        )
-
-    segments = [
-        f"Live call context update: the caller currently sounds like they have {call_state.routed_issue_label}.",
-    ]
-    if call_state.last_user_transcript:
-        segments.append(f"Latest caller wording: {call_state.last_user_transcript}")
-    if call_state.integration_targets:
-        segments.append(f"Integration targets mentioned: {', '.join(call_state.integration_targets)}.")
-    if call_state.frustration_level == "high":
-        segments.append("Caller sounds frustrated. Acknowledge that first, then offer one short next step.")
-    segments.append("On your next response, summarize first and then state the Qualys terminology clearly.")
-    return " ".join(segments)
-
-
 def _best_product_area_hint(call_state: CallState) -> str | None:
     product_area = (call_state.product_area or "").strip()
     if product_area:
         return product_area.replace("_", " ")
-    if call_state.routed_issue_family != "general":
-        return call_state.routed_issue_family.replace("_", " ")
     return None
-
-
-def _should_search_before_answer(call_state: CallState) -> bool:
-    if not _knowledge_backend_enabled() or call_state.off_topic_detected:
-        return False
-
-    query = (call_state.last_user_transcript or call_state.issue_summary).strip()
-    if not query:
-        return False
-
-    lowered = query.lower()
-    if any(pattern in lowered for pattern in SEARCH_FIRST_PATTERNS):
-        return True
-    if _extract_error_tokens(query):
-        return True
-    if call_state.integration_targets and any(token in lowered for token in ("how", "why", "exact", "detail", "steps", "api", "connector", "integration")):
-        return True
-    return False
 
 
 def _build_direct_response_hint(call_state: CallState) -> str:
     product_area = _best_product_area_hint(call_state) or "Qualys support"
+    issue_text = call_state.issue_summary or call_state.last_user_transcript or "the caller's issue"
     return (
-        "For your next response, answer directly from the live call context without checking the knowledge base unless you are genuinely uncertain. "
-        f"Frame the issue in explicit Qualys terms around {product_area}. "
-        "Sound like a real support engineer: summarize what you heard, give a brief plain-language explanation of what it likely means, and then give only the single best next step. "
-        "If you realize you are not sure, say one short line that you are quickly checking the knowledge base for the exact path and then use `search_qualys_support_knowledge`."
-    )
-
-
-def _build_search_bridge_hint(call_state: CallState) -> str:
-    product_area = _best_product_area_hint(call_state) or "Qualys support"
-    return (
-        "For your next response, do not troubleshoot yet. "
-        f"Give exactly one short spoken sentence that summarizes the issue in explicit Qualys terms around {product_area} "
-        "and says you are quickly checking the knowledge base for the exact path. "
-        "Make the sentence feel slightly adapted to the product area instead of robotic. Do not give steps yet, and do not ask a question in this transition."
+        "For your next response, answer directly in simple human English. "
+        f"Keep the answer grounded in {product_area}. "
+        f"Caller issue: {issue_text}. "
+        "Do not describe your internal process. Give a short explanation and the best next step."
     )
 
 
 def _build_safe_preliminary_check(call_state: CallState) -> str:
-    family = call_state.routed_issue_family
-    if family == "scan":
-        return "ask them to confirm whether the latest scan job is still running, failed, or stuck in the scan details view"
-    if family == "cloud_agent":
-        return "ask them to confirm whether the Cloud Agent service is running and when the last check-in timestamp changed"
-    if family == "integration":
-        return "ask them to confirm the connector job status and the exact error text from the target platform"
-    if family == "api":
-        return "ask them to confirm the exact endpoint, response code, and header they are using"
-    if family == "authentication":
-        return "ask them to confirm whether the authentication record test itself is failing and what exact failure message they see"
-    if family == "vmdr":
-        return "ask them to confirm whether the affected asset is present and whether the latest scan or agent check-in completed"
     return "ask them to confirm the exact error text or the last screen where the workflow fails"
 
 
@@ -1479,16 +1198,18 @@ def _build_knowledge_grounding_hint(result: dict[str, Any], call_state: CallStat
     if error:
         return (
             f"Knowledge grounding update: live lookup to {backend} failed with `{error}`. "
-            "Tell the caller you could not confirm the exact path in the knowledge base. "
-            f"Give one safe preliminary check first: {safe_check}. Then ask one targeted clarifying question. Do not invent product-specific steps."
+            "Do not mention the lookup or any source. "
+            f"Answer directly in simple English. If you are not sure, give one safe preliminary check first: {safe_check}. "
+            "Then ask one short clarifying question. Do not invent product-specific steps."
         )
 
     if not results:
         reason = note or "No matching support results were returned."
         return (
             f"Knowledge grounding update: {backend} returned no strong results for `{query}`. {reason} "
-            "Tell the caller you checked the knowledge base but need one more detail. "
-            f"Give one safe preliminary check first: {safe_check}. Then ask one short clarifying question before giving detailed troubleshooting steps. Do not pretend you verified an article."
+            "Do not mention the lookup or any source. "
+            f"Answer directly in simple English. Give one safe preliminary check first: {safe_check}. "
+            "Then ask one short clarifying question before giving more detailed troubleshooting steps."
         )
 
     best_result = result.get("best_result") or {}
@@ -1500,7 +1221,9 @@ def _build_knowledge_grounding_hint(result: dict[str, Any], call_state: CallStat
 
     guidance = [
         f"Knowledge grounding update from {backend} for your next answer.",
-        "Tell the caller you found guidance in the knowledge base, then explain it naturally like a strong human support engineer.",
+        "Use the retrieved guidance silently in the background.",
+        "Do not say you searched, checked a source, found an article, or used the knowledge base.",
+        "Answer directly in simple human language first.",
         "Do not mention the article title or source name out loud unless the caller explicitly asks.",
         f"Use the retrieved results as the source of truth for product-specific facts and next steps. Query used: `{query}`.",
     ]
@@ -1603,7 +1326,10 @@ def _extract_backend_results(payload: Any) -> list[dict[str, str]]:
 
 
 def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, Any]:
+    logger.info("_knowledge_lookup_sync - Starting knowledge lookup: query='%s', product_area='%s'", 
+               _safe_preview(query, limit=100), product_area or "none")
     if not KNOWLEDGE_BACKEND_URL:
+        logger.info("_knowledge_lookup_sync - Knowledge backend not configured")
         return {
             "backend": KNOWLEDGE_BACKEND_NAME,
             "query": query,
@@ -1614,6 +1340,8 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
     rewritten_query = _rewrite_support_query(query, product_area)
     backend_kind = _knowledge_backend_kind()
     cache_key = f"{backend_kind}|{_normalize_text(rewritten_query)}|{_normalize_text(product_area or '')}"
+    logger.info("_knowledge_lookup_sync - Query rewritten: '%s' -> '%s', backend_kind='%s'", 
+               _safe_preview(query, limit=100), _safe_preview(rewritten_query, limit=100), backend_kind)
     if LOG_KNOWLEDGE_DETAILS:
         logger.debug(
             "Knowledge lookup start backend=%s kind=%s query=%s rewritten=%s product_area=%s",
@@ -1625,6 +1353,7 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
         )
     cached = _cache_get(cache_key)
     if cached is not None:
+        logger.info("_knowledge_lookup_sync - Cache hit for key='%s'", _safe_preview(cache_key, limit=150))
         return cached
 
     ssl_context = _knowledge_ssl_context()
@@ -1711,9 +1440,13 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
 
 
 async def _knowledge_lookup(query: str, product_area: str | None, call_logger: logging.Logger) -> dict[str, Any]:
+    logger.info("_knowledge_lookup - Starting async knowledge lookup: query='%s', product_area='%s'", 
+               _safe_preview(query, limit=100), product_area or "none")
     try:
         result = await asyncio.to_thread(_knowledge_lookup_sync, query, product_area)
         best_result = result.get("best_result") or {}
+        logger.info("_knowledge_lookup - Lookup completed: backend='%s', result_count=%s, best_confidence=%s, response_mode='%s', conflict=%s", 
+                   result.get("backend"), len(result.get("results") or []), result.get("best_confidence"), result.get("response_mode"), result.get("conflict"))
         call_logger.info(
             "Knowledge lookup complete kind=%s best_source=%s confidence=%s conflict=%s",
             result.get("backend_kind") or _knowledge_backend_kind(),
@@ -1723,12 +1456,15 @@ async def _knowledge_lookup(query: str, product_area: str | None, call_logger: l
         )
         return result
     except urllib_error.HTTPError as exc:
+        logger.warning("_knowledge_lookup - HTTP error during lookup: %s", exc)
         call_logger.warning("Knowledge lookup HTTP error: %s", exc)
         return {"backend": KNOWLEDGE_BACKEND_NAME, "query": query, "results": [], "error": f"HTTP {exc.code}"}
     except urllib_error.URLError as exc:
+        logger.warning("_knowledge_lookup - URL error during lookup: %s", exc)
         call_logger.warning("Knowledge lookup URL error: %s", exc)
         return {"backend": KNOWLEDGE_BACKEND_NAME, "query": query, "results": [], "error": str(exc.reason)}
     except Exception as exc:  # noqa: BLE001
+        logger.exception("_knowledge_lookup - Unexpected error during lookup")
         call_logger.exception("Knowledge lookup failed")
         return {"backend": KNOWLEDGE_BACKEND_NAME, "query": query, "results": [], "error": str(exc)}
 
@@ -1873,13 +1609,17 @@ async def _send_initial_greeting(openai_ws) -> None:
 
 @app.get("/", response_class=JSONResponse)
 async def index_page():
-    return JSONResponse(content={"message": "Hello! This is the AI Phone Agent with OpenAI Realtime API. Please set up your Twilio webhook to point to /incoming-call and start a call to see it in action."})
+    logger.info("GET / - Index page requested")
+    response = JSONResponse(content={"message": "Hello! This is the AI Phone Agent with OpenAI Realtime API. Please set up your Twilio webhook to point to /incoming-call and start a call to see it in action."})
+    logger.info("GET / - Response sent: %s", response.body.decode() if hasattr(response, 'body') else "JSON response")
+    return response
 
 
 
 @app.get("/health", response_class=JSONResponse)
 async def health():
-    return {
+    logger.info("GET /health - Health check requested")
+    response_data = {
         "ok": True,
         "model": OPENAI_MODEL,
         "voice": VOICE,
@@ -1900,10 +1640,15 @@ async def health():
             "log_knowledge_details": LOG_KNOWLEDGE_DETAILS,
         },
     }
+    logger.info("GET /health - Response: ok=%s, model=%s, voice=%s, knowledge_enabled=%s", 
+                response_data["ok"], response_data["model"], response_data["voice"], response_data["knowledge_backend_enabled"])
+    return response_data
 
 
 @app.get("/demo-readiness", response_class=JSONResponse)
 async def demo_readiness(probe_search: bool = False, query: str = "", product_area: str = ""):
+    logger.info("GET /demo-readiness - Demo readiness check requested with probe_search=%s, query='%s', product_area='%s'", 
+                probe_search, query, product_area)
     checks = _build_demo_readiness_checks()
     payload: dict[str, Any] = {
         "ready": _demo_ready(checks),
@@ -1916,6 +1661,8 @@ async def demo_readiness(probe_search: bool = False, query: str = "", product_ar
     if probe_search and _knowledge_backend_enabled():
         search_query = query.strip() or DEMO_LOOKUP_QUERY
         search_product_area = product_area.strip() or DEMO_LOOKUP_PRODUCT_AREA
+        logger.info("GET /demo-readiness - Performing knowledge probe with query='%s', product_area='%s'", 
+                    search_query, search_product_area)
         probe_result = await _knowledge_lookup(search_query, search_product_area, logger.getChild("demo_probe"))
         payload["knowledge_probe"] = {
             "query": search_query,
@@ -1928,6 +1675,13 @@ async def demo_readiness(probe_search: bool = False, query: str = "", product_ar
             "error": probe_result.get("error"),
             "note": probe_result.get("note"),
         }
+        logger.info("GET /demo-readiness - Knowledge probe completed: result_count=%s, best_confidence=%s, response_mode=%s, conflict=%s", 
+                    payload["knowledge_probe"]["result_count"], 
+                    payload["knowledge_probe"]["best_confidence"], 
+                    payload["knowledge_probe"]["response_mode"], 
+                    payload["knowledge_probe"]["conflict"])
+    logger.info("GET /demo-readiness - Response: ready=%s, checks_count=%s, has_probe=%s", 
+                payload["ready"], len(payload["checks"]), "knowledge_probe" in payload)
     return payload
 
 
@@ -1935,7 +1689,16 @@ async def demo_readiness(probe_search: bool = False, query: str = "", product_ar
 async def demo_search(query: str = "", product_area: str = ""):
     search_query = query.strip() or DEMO_LOOKUP_QUERY
     search_product_area = product_area.strip() or DEMO_LOOKUP_PRODUCT_AREA
-    return await _knowledge_lookup(search_query, search_product_area, logger.getChild("demo_search"))
+    logger.info("GET /demo-search - Demo search requested with query='%s', product_area='%s'", 
+                search_query, search_product_area)
+    result = await _knowledge_lookup(search_query, search_product_area, logger.getChild("demo_search"))
+    logger.info("GET /demo-search - Search completed: result_count=%s, best_confidence=%s, response_mode=%s, conflict=%s, error=%s", 
+                len(result.get("results") or []), 
+                result.get("best_confidence"), 
+                result.get("response_mode"), 
+                result.get("conflict"), 
+                result.get("error"))
+    return result
 
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])
@@ -1943,8 +1706,10 @@ async def demo_search(query: str = "", product_area: str = ""):
 @app.api_route("/socket/invoke/incoming-call", methods=["GET", "POST"])
 async def handle_incoming_call(request: Request):
     """Return TwiML instructing Twilio to start a Media Stream to `/media-stream`."""
+    logger.info("Incoming call webhook - Method: %s, URL: %s, Headers: %s", 
+                request.method, str(request.url), dict(request.headers))
     stream_url = _build_twilio_stream_url(request)
-    logger.info("Incoming call webhook; streaming to %s", stream_url)
+    logger.info("Incoming call webhook - Streaming to %s", stream_url)
     if stream_url.startswith("ws://"):
         logger.warning("Twilio Media Streams typically requires `wss://` (TLS). Check `PUBLIC_URL` / proxy config.")
     if "localhost" in stream_url or "127.0.0.1" in stream_url:
@@ -1954,7 +1719,9 @@ async def handle_incoming_call(request: Request):
     connect = Connect()
     connect.stream(url=stream_url)
     response.append(connect)
-    return HTMLResponse(content=str(response), media_type="application/xml")
+    twiml_content = str(response)
+    logger.info("Incoming call webhook - TwiML response generated: %s", twiml_content)
+    return HTMLResponse(content=twiml_content, media_type="application/xml")
 
 
 @app.websocket("/media-stream")
@@ -1962,9 +1729,10 @@ async def handle_incoming_call(request: Request):
 @app.websocket("/socket/invoke/media-stream")
 async def handle_media_stream(websocket: WebSocket):
     """Bridge Twilio Media Streams <-> OpenAI Realtime API."""
+    logger.info("WebSocket connection attempt to /media-stream from %s", websocket.client.host if websocket.client else "unknown")
     await websocket.accept()
     call_logger = logger.getChild(secrets.token_hex(4))
-    call_logger.info("Twilio WS connected")
+    call_logger.info("Twilio WS connected - Call ID: %s", call_logger.name)
     if LOG_TWILIO_MEDIA_EVENTS or LOG_TOOL_PAYLOADS or LOG_CALL_TRANSCRIPTS:
         call_logger.debug(
             "Call debug flags transcripts=%s tools=%s twilio_media=%s openai_events=%s knowledge=%s",
@@ -1978,8 +1746,10 @@ async def handle_media_stream(websocket: WebSocket):
     openai_ws = None
     try:
         openai_ws = await _openai_connect()
-        call_logger.info("OpenAI WS connected (%s)", OPENAI_MODEL)
+        call_logger.info("OpenAI WS connected (%s) - Session update and initial greeting will be sent", OPENAI_MODEL)
         await _send_session_update(openai_ws)
+        call_logger.info("Session update sent to OpenAI - Tools configured: %s, Voice: %s, Model: %s", 
+                        len(_build_realtime_tools()), VOICE, OPENAI_MODEL)
 
         stream_sid: str | None = None
         latest_media_timestamp_ms = 0
@@ -1990,7 +1760,6 @@ async def handle_media_stream(websocket: WebSocket):
         twilio_started = asyncio.Event()
         pending_interrupt_task: asyncio.Task[None] | None = None
         handled_call_ids: set[str] = set()
-        last_context_hint_signature = ""
         last_user_input_signature = ""
         last_user_input_signature_at = 0.0
         pending_user_turn_task: asyncio.Task[None] | None = None
@@ -2102,7 +1871,9 @@ async def handle_media_stream(websocket: WebSocket):
             pending_interrupt_task = asyncio.create_task(_delayed_interrupt(), name="interrupt-debounce")
 
         async def send_system_message(text: str, label: str) -> None:
+            logger.info("send_system_message - Sending system message: label='%s', text_length=%s", label, len(text))
             if LOG_TOOL_PAYLOADS or (label == "knowledge grounding" and LOG_KNOWLEDGE_DETAILS):
+                logger.debug("send_system_message - Content: %s", _safe_preview(text, limit=700))
                 call_logger.debug("Sending %s=%s", label, _safe_preview(text, limit=700))
             await openai_ws.send(
                 _json_dumps(
@@ -2116,6 +1887,7 @@ async def handle_media_stream(websocket: WebSocket):
                     }
                 )
             )
+            logger.debug("send_system_message - System message sent to OpenAI")
 
         async def maybe_send_interruption_ack_hint() -> None:
             nonlocal interruption_pending_ack
@@ -2134,12 +1906,17 @@ async def handle_media_stream(websocket: WebSocket):
 
         async def request_assistant_response(reason: str, wait_for_previous: bool = True) -> None:
             nonlocal active_response_id
+            logger.info("request_assistant_response - Requesting assistant response: reason='%s', wait_for_previous=%s, active_response_id='%s'", 
+                       reason, wait_for_previous, active_response_id or "none")
             if wait_for_previous:
                 wait_timeout_s = 3.0 if time.monotonic() < response_resume_not_before else 8.0
+                logger.debug("request_assistant_response - Waiting for previous response completion (timeout=%ss)", wait_timeout_s)
                 try:
                     await asyncio.wait_for(response_done_event.wait(), timeout=wait_timeout_s)
                 except TimeoutError:
                     if active_response_id:
+                        logger.warning("request_assistant_response - Timed out waiting for active response=%s before phase=%s; cancelling and retrying wait", 
+                                      active_response_id, reason)
                         call_logger.warning(
                             "Timed out waiting for active response=%s before phase=%s; cancelling and retrying wait",
                             active_response_id,
@@ -2158,23 +1935,22 @@ async def handle_media_stream(websocket: WebSocket):
                         raise
             remaining_cooldown_s = response_resume_not_before - time.monotonic()
             if remaining_cooldown_s > 0:
+                logger.debug("request_assistant_response - Waiting for interruption cooldown: %ss", remaining_cooldown_s)
                 await asyncio.sleep(remaining_cooldown_s)
             response_done_event.clear()
             if reason in {"knowledge-bridge", "knowledge-answer", "direct-answer"}:
+                logger.info("request_assistant_response - Starting new response phase: %s", reason)
                 call_logger.info("Assistant response started phase=%s", reason)
             if LOG_TOOL_PAYLOADS:
                 call_logger.debug("Creating assistant response reason=%s", reason)
             try:
+                logger.debug("request_assistant_response - Sending response.create to OpenAI")
                 await openai_ws.send(_json_dumps({"type": "response.create"}))
+                logger.info("request_assistant_response - Response.create sent successfully")
             except Exception:
+                logger.exception("request_assistant_response - Failed to send response.create")
                 response_done_event.set()
                 raise
-
-        async def wait_for_assistant_response(timeout_s: float) -> None:
-            try:
-                await asyncio.wait_for(response_done_event.wait(), timeout=timeout_s)
-            except TimeoutError:
-                call_logger.debug("Timed out waiting for assistant response completion")
 
         async def get_server_managed_knowledge_result(query: str, product_area: str | None) -> dict[str, Any]:
             nonlocal knowledge_prefetch_result
@@ -2208,7 +1984,7 @@ async def handle_media_stream(websocket: WebSocket):
 
             return await _knowledge_lookup(query, product_area, call_logger)
 
-        async def run_search_first_response() -> None:
+        async def run_grounded_response() -> None:
             nonlocal knowledge_flow_active, knowledge_prefetch_task, knowledge_prefetch_result, knowledge_prefetch_query, knowledge_prefetch_product_area
             query = (call_state.last_user_transcript or call_state.issue_summary).strip()
             if not query:
@@ -2221,26 +1997,16 @@ async def handle_media_stream(websocket: WebSocket):
             knowledge_prefetch_query = query
             knowledge_prefetch_product_area = product_area or ""
             knowledge_prefetch_result = None
-            call_logger.info(
-                "Knowledge bridge starting product_area=%s query=%s",
-                product_area or "",
-                _safe_preview(query, limit=220),
-            )
+            call_logger.info("Knowledge lookup starting product_area=%s query=%s", product_area or "", _safe_preview(query, limit=220))
             knowledge_prefetch_task = asyncio.create_task(
                 _knowledge_lookup(query, product_area, call_logger),
                 name="knowledge-prefetch",
             )
             try:
-                await send_system_message(_build_search_bridge_hint(call_state), "knowledge bridge")
-                await request_assistant_response("knowledge-bridge")
-                await wait_for_assistant_response(4.5)
-
                 grounding = await get_server_managed_knowledge_result(query, product_area)
                 knowledge_prefetch_result = grounding
                 best_result = grounding.get("best_result") or {}
                 best_title = str(best_result.get("title") or "").strip()
-                if best_title:
-                    _append_unique(call_state.grounding_notes, f"Knowledge base match: {best_title}", limit=4)
                 call_logger.info(
                     "Knowledge answer starting best_title=%s confidence=%s response_mode=%s",
                     _safe_preview(best_title, limit=160),
@@ -2256,40 +2022,32 @@ async def handle_media_stream(websocket: WebSocket):
 
         async def handle_transcribed_user_turn(transcript: str) -> None:
             try:
-                route_changed = call_state.apply_user_transcript(transcript)
-                if route_changed:
-                    _append_unique(
-                        call_state.confirmed_facts,
-                        f"Routed issue family: {call_state.routed_issue_label}",
-                    )
-                call_logger.info(
-                    "Caller transcript received; routed as %s; frustration=%s",
-                    call_state.routed_issue_family,
-                    call_state.frustration_level,
-                )
+                logger.info("handle_transcribed_user_turn - Processing user transcript: '%s'", _safe_preview(transcript, limit=200))
+                call_state.apply_user_transcript(transcript)
+                call_logger.info("Caller transcript received summary=%s", _safe_preview(call_state.issue_summary, limit=220))
                 if LOG_CALL_TRANSCRIPTS:
                     call_logger.debug(
-                        "Caller transcript=%s route_changed=%s off_topic=%s reason=%s context=%s",
+                        "Caller transcript=%s context=%s",
                         _safe_preview(transcript, limit=400),
-                        route_changed,
-                        call_state.off_topic_detected,
-                        call_state.off_topic_reason,
                         _safe_preview(call_state.summary_text(), limit=500),
                     )
 
-                await maybe_send_call_context_hint()
                 await maybe_send_interruption_ack_hint()
-                if _should_search_before_answer(call_state):
-                    await run_search_first_response()
+                if _knowledge_backend_enabled():
+                    logger.info("handle_transcribed_user_turn - Starting grounded response flow")
+                    await run_grounded_response()
                     return
 
+                logger.info("handle_transcribed_user_turn - Direct answer flow, sending hint to OpenAI")
                 await send_system_message(_build_direct_response_hint(call_state), "direct answer")
                 await request_assistant_response("direct-answer")
             except asyncio.CancelledError:
+                logger.debug("handle_transcribed_user_turn - Task cancelled")
                 if LOG_CALL_TRANSCRIPTS:
                     call_logger.debug("Cancelled pending user turn handling")
                 raise
             except Exception:
+                logger.exception("handle_transcribed_user_turn - Unexpected error in user turn handler")
                 call_logger.exception("User turn handler failed")
 
         def schedule_transcribed_user_turn(event: dict[str, Any], transcript: str) -> None:
@@ -2316,9 +2074,11 @@ async def handle_media_stream(websocket: WebSocket):
             call_id = item.get("call_id")
             tool_name = item.get("name")
             if not call_id or call_id in handled_call_ids:
+                call_logger.debug("handle_tool_call - Skipping tool call: call_id='%s', name='%s' (already handled or missing id)", call_id, tool_name)
                 return
             handled_call_ids.add(call_id)
 
+            logger.info("handle_tool_call - Processing tool call: id='%s', name='%s'", call_id, tool_name)
             raw_arguments = item.get("arguments") or "{}"
             if isinstance(raw_arguments, str):
                 try:
@@ -2334,33 +2094,47 @@ async def handle_media_stream(websocket: WebSocket):
             if LOG_TOOL_PAYLOADS:
                 call_logger.debug("Tool `%s` arguments=%s", tool_name, _safe_preview(arguments, limit=500))
             if tool_name == "remember_call_context":
+                logger.info("handle_tool_call - Executing remember_call_context with arguments: %s", 
+                           {k: _safe_preview(str(v), limit=50) for k, v in arguments.items()})
                 call_state.remember_context(arguments)
                 tool_output = {
                     "ok": True,
                     "summary": call_state.summary_text(),
                     "context": call_state.as_tool_payload(),
                 }
+                logger.info("handle_tool_call - remember_call_context completed: confirmed_facts=%s, tried_steps=%s", 
+                           len(call_state.confirmed_facts), len(call_state.tried_steps))
             elif tool_name == "get_call_context":
+                logger.info("handle_tool_call - Executing get_call_context")
                 tool_output = {
                     "summary": call_state.summary_text(),
                     "context": call_state.as_tool_payload(),
                 }
+                logger.info("handle_tool_call - get_call_context completed: user_turns=%s, assistant_turns=%s", 
+                           call_state.user_turns, call_state.assistant_turns)
             elif tool_name == "search_qualys_support_knowledge":
                 query = str(arguments.get("query") or "").strip()
                 product_area = str(arguments.get("product_area") or "").strip() or None
                 if not query:
                     query = call_state.issue_summary or call_state.last_user_transcript
+                logger.info("handle_tool_call - Executing search_qualys_support_knowledge: query='%s', product_area='%s'", 
+                           _safe_preview(query, limit=100), product_area or "none")
                 if knowledge_flow_active:
                     call_logger.info("Reusing server-managed knowledge flow for tool call query=%s", _safe_preview(query, limit=220))
                     tool_output = await get_server_managed_knowledge_result(query, product_area)
                 else:
                     tool_output = await _knowledge_lookup(query, product_area, call_logger)
+                logger.info("handle_tool_call - search_qualys_support_knowledge completed: result_count=%s, best_confidence=%s", 
+                           len(tool_output.get("results") or []), tool_output.get("best_confidence"))
             else:
+                logger.warning("handle_tool_call - Unknown tool name: '%s'", tool_name)
                 tool_output = {"error": f"Unsupported tool: {tool_name}"}
 
             if LOG_TOOL_PAYLOADS:
                 call_logger.debug("Tool `%s` output=%s", tool_name, _safe_preview(tool_output, limit=700))
 
+            logger.info("handle_tool_call - Sending tool output back to OpenAI: tool='%s', output_keys=%s", 
+                       tool_name, list(tool_output.keys()))
             await openai_ws.send(
                 _json_dumps(
                     {
@@ -2376,42 +2150,16 @@ async def handle_media_stream(websocket: WebSocket):
             if tool_name == "search_qualys_support_knowledge":
                 best_result = tool_output.get("best_result") or {}
                 best_title = str(best_result.get("title") or "").strip()
-                if best_title:
-                    _append_unique(call_state.grounding_notes, f"Knowledge base match: {best_title}", limit=4)
                 if knowledge_flow_active:
                     call_logger.info("Skipping duplicate response.create for server-managed knowledge tool call")
                     return
+                logger.info("handle_tool_call - Sending knowledge grounding hint to OpenAI")
                 await send_system_message(_build_knowledge_grounding_hint(tool_output, call_state), "knowledge grounding")
+            logger.info("handle_tool_call - Creating new assistant response for tool result")
             await request_assistant_response(f"tool:{tool_name}", wait_for_previous=False)
 
-        async def maybe_send_call_context_hint() -> None:
-            nonlocal last_context_hint_signature
-            if (
-                call_state.routed_issue_family == "general"
-                and call_state.frustration_level == "low"
-                and not call_state.off_topic_detected
-            ):
-                return
-
-            signature = "|".join(
-                [
-                    call_state.routed_issue_family,
-                    call_state.frustration_level,
-                    "off-topic" if call_state.off_topic_detected else "in-scope",
-                    call_state.off_topic_reason,
-                    ",".join(call_state.integration_targets),
-                    call_state.last_user_transcript[:120],
-                ]
-            )
-            if signature == last_context_hint_signature:
-                return
-
-            last_context_hint_signature = signature
-            system_hint = _build_call_context_hint(call_state)
-            await send_system_message(system_hint, "context hint")
-
         async def receive_from_twilio() -> None:
-            nonlocal assistant_audio_sent_ms, stream_sid, latest_media_timestamp_ms, last_assistant_item_id, response_start_timestamp_twilio_ms, last_context_hint_signature, last_user_input_signature, last_user_input_signature_at, interruption_pending_ack, response_resume_not_before, active_response_id
+            nonlocal assistant_audio_sent_ms, stream_sid, latest_media_timestamp_ms, last_assistant_item_id, response_start_timestamp_twilio_ms, last_user_input_signature, last_user_input_signature_at, interruption_pending_ack, response_resume_not_before, active_response_id
             try:
                 async for message in websocket.iter_text():
                     try:
@@ -2432,7 +2180,6 @@ async def handle_media_stream(websocket: WebSocket):
                         last_assistant_item_id = None
                         call_state.__dict__.update(dataclasses.asdict(CallState(assistant_name=ASSISTANT_NAME, support_product=SUPPORT_PRODUCT)))
                         handled_call_ids.clear()
-                        last_context_hint_signature = ""
                         last_user_input_signature = ""
                         last_user_input_signature_at = 0.0
                         interruption_pending_ack = False
@@ -2445,8 +2192,10 @@ async def handle_media_stream(websocket: WebSocket):
                         mark_queue.clear()
                         call_logger.info("Twilio stream started: %s", stream_sid)
                         if AI_SPEAKS_FIRST:
+                            call_logger.info("AI speaks first enabled - Sending initial greeting")
                             response_done_event.clear()
                             await _send_initial_greeting(openai_ws)
+                            call_logger.info("Initial greeting sent to OpenAI")
                         continue
 
                     if event_type == "media":
@@ -2457,6 +2206,7 @@ async def handle_media_stream(websocket: WebSocket):
                         if payload is None or ts is None:
                             continue
                         latest_media_timestamp_ms = int(ts)
+                        logger.debug("Twilio media received - timestamp=%s, payload_length=%s", ts, len(payload) if payload else 0)
                         if LOG_TWILIO_MEDIA_EVENTS:
                             call_logger.debug(
                                 "Twilio media ts=%s payload_chars=%s",
@@ -2478,6 +2228,7 @@ async def handle_media_stream(websocket: WebSocket):
                         continue
 
                     if event_type == "stop":
+                        logger.info("Twilio stop event received - Closing WebSocket connections")
                         call_logger.info("Twilio sent stop; closing")
                         if LOG_TWILIO_MEDIA_EVENTS:
                             call_logger.debug("Twilio stop payload=%s", _safe_preview(data, limit=300))
@@ -2522,6 +2273,7 @@ async def handle_media_stream(websocket: WebSocket):
                         response_id = response.get("id")
                         if isinstance(response_id, str) and response_id.strip():
                             active_response_id = response_id.strip()
+                            logger.info("OpenAI response created - Response ID: %s", active_response_id)
                         continue
 
                     if event_type == "error":
@@ -2538,9 +2290,13 @@ async def handle_media_stream(websocket: WebSocket):
                         return
 
                     if event_type == "response.done":
+                        logger.info("OpenAI response completed - Response ID: %s", active_response_id or "unknown")
                         active_response_id = None
                         response_done_event.set()
-                        for item in _extract_function_calls_from_event(event):
+                        tool_calls = _extract_function_calls_from_event(event)
+                        if tool_calls:
+                            logger.info("OpenAI response.done - Processing %s tool calls", len(tool_calls))
+                        for item in tool_calls:
                             await handle_tool_call(item)
                         continue
 
@@ -2560,6 +2316,7 @@ async def handle_media_stream(websocket: WebSocket):
                     }:
                         transcript = _extract_transcript_text(event)
                         if transcript:
+                            logger.info("OpenAI transcription completed - User transcript: '%s'", _safe_preview(transcript, limit=150))
                             schedule_transcribed_user_turn(event, transcript)
                         continue
 
@@ -2571,6 +2328,7 @@ async def handle_media_stream(websocket: WebSocket):
                         if transcript:
                             call_state.last_assistant_transcript = transcript
                             call_state.assistant_turns += 1
+                            logger.info("OpenAI assistant transcript completed - Assistant transcript: '%s'", _safe_preview(transcript, limit=150))
                             if LOG_CALL_TRANSCRIPTS:
                                 call_logger.debug("Assistant transcript=%s", _safe_preview(transcript, limit=400))
                         continue
@@ -2582,12 +2340,15 @@ async def handle_media_stream(websocket: WebSocket):
 
                         item_id = event.get("item_id")
                         if item_id and item_id != last_assistant_item_id:
+                            logger.info("OpenAI audio started - New item ID: %s", item_id)
                             assistant_audio_sent_ms = 0
                             response_start_timestamp_twilio_ms = latest_media_timestamp_ms if latest_media_timestamp_ms > 0 else None
                             last_assistant_item_id = item_id
 
                         if response_start_timestamp_twilio_ms is None:
                             assistant_audio_sent_ms = 0
+                        logger.debug("OpenAI audio delta - Sending to Twilio: payload_length=%s, total_audio_ms=%s", 
+                                   len(delta), assistant_audio_sent_ms + _estimate_pcmu_audio_ms(delta))
                         await websocket.send_text(
                             f'{{"event":"media","streamSid":"{stream_sid}","media":{{"payload":"{delta}"}}}}'
                         )
@@ -2607,11 +2368,13 @@ async def handle_media_stream(websocket: WebSocket):
                         continue
 
                     if event_type == "input_audio_buffer.speech_started":
+                        logger.info("OpenAI speech started detected - Interrupting assistant if active")
                         if last_assistant_item_id:
                             await schedule_interrupt()
                         continue
 
                     if event_type == "input_audio_buffer.speech_stopped":
+                        logger.debug("OpenAI speech stopped detected - Cancelling pending interrupt")
                         cancel_pending_interrupt()
                         continue
 
@@ -2634,11 +2397,13 @@ async def handle_media_stream(websocket: WebSocket):
             task.result()
 
     except Exception:
+        logger.exception("Media stream handler failed - Call ID: %s", call_logger.name)
         call_logger.exception("Media stream handler failed")
         with suppress(Exception):
             await websocket.close(code=1011)
     finally:
         if openai_ws is not None:
+            logger.info("Closing OpenAI WebSocket connection")
             with suppress(Exception):
                 await openai_ws.close()
 

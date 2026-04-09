@@ -47,7 +47,6 @@ Optional variables you may want to set:
 - `VOICE` (default: `coral`), `SYSTEM_MESSAGE`, `AI_SPEAKS_FIRST`
 - `INTERRUPT_DEBOUNCE_MS` to ignore tiny bursts of noise before interrupting speech
 - `TRANSCRIPTION_MODEL`, `TRANSCRIPTION_LANGUAGE`, `TRANSCRIPTION_NOISE_REDUCTION` to tune phone-call transcription and noise handling
-- `QUALYS_DYNAMIC_OPENERS` as a JSON array or `|`-separated list of rotating opener questions
 - `KNOWLEDGE_BACKEND_URL` and related auth env vars to connect SearchUnify or another support-search backend
 - `KNOWLEDGE_BACKEND_KIND` to force `searchunify_post` or `generic_get` if auto-detection is not enough
 - `KNOWLEDGE_BACKEND_SSL_CERT_FILE`, `KNOWLEDGE_BACKEND_SSL_INSECURE`, and `KNOWLEDGE_CACHE_TTL_S` for enterprise TLS and caching control
@@ -62,7 +61,7 @@ The default runtime persona is designed for a SearchUnify assistant that:
 
 - clearly discloses it is an AI assistant on the opening line
 - sounds warm, polished, confident, and natural without pretending to be human
-- opens with a dynamic Qualys support question
+- opens with a short natural Qualys support greeting
 - summarizes what it heard first and then says the Qualys issue framing out loud
 - uses adaptive troubleshooting with confirmation loops and one-step-at-a-time guidance
 - rephrases casual user wording into clearer Qualys terminology
@@ -104,7 +103,7 @@ SEARCHUNIFY_REFERER=https://your-instance.searchunify.ai/...
 SEARCHUNIFY_COOKIE=
 ```
 
-The SearchUnify adapter rewrites the caller query into stronger Qualys terminology, normalizes `result.hits`, ranks results by backend score, query overlap, product-area overlap, freshness, and solved status, and returns a `best_result`, `best_confidence`, `conflict`, and `response_mode` to help the model stay grounded.
+The SearchUnify adapter cleans noisy caller wording into a compact search query, normalizes `result.hits`, ranks results by backend score, query overlap, product-area overlap, freshness, and solved status, and returns a `best_result`, `best_confidence`, `conflict`, and `response_mode` to help the model stay grounded.
 
 For generic GET backends, the app expects:
 
