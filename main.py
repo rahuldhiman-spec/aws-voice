@@ -77,7 +77,7 @@ if CUSTOM_SYSTEM_MESSAGE == LEGACY_DEFAULT_SYSTEM_MESSAGE:
 
 ASSISTANT_NAME = (os.getenv("ASSISTANT_NAME") or "SearchUnify assistant").strip()
 SUPPORT_PRODUCT = (os.getenv("SUPPORT_PRODUCT") or "Qualys").strip()
-VOICE = os.getenv("VOICE", "marin").strip()
+VOICE = os.getenv("VOICE", "verse").strip()
 AI_SPEAKS_FIRST = _env_bool("AI_SPEAKS_FIRST", True)
 INTERRUPT_DEBOUNCE_MS = int(os.getenv("INTERRUPT_DEBOUNCE_MS", "180"))
 INTERRUPT_MIN_SPEECH_MS = max(int(os.getenv("INTERRUPT_MIN_SPEECH_MS", "260")), INTERRUPT_DEBOUNCE_MS)
@@ -110,6 +110,7 @@ SEARCHUNIFY_ORDER_BY = (os.getenv("SEARCHUNIFY_ORDER_BY") or "desc").strip()
 TRANSCRIPTION_MODEL = (os.getenv("TRANSCRIPTION_MODEL") or "gpt-4o-mini-transcribe").strip()
 TRANSCRIPTION_LANGUAGE = (os.getenv("TRANSCRIPTION_LANGUAGE") or "en").strip()
 TRANSCRIPTION_NOISE_REDUCTION = (os.getenv("TRANSCRIPTION_NOISE_REDUCTION") or "near_field").strip()
+COMMUNICATION_STYLE = (os.getenv("COMMUNICATION_STYLE") or "warm_regional").strip().lower()
 
 LOG_OPENAI_EVENTS = _env_bool("LOG_OPENAI_EVENTS", False)
 SHOW_TIMING_MATH = _env_bool("SHOW_TIMING_MATH", False)
@@ -132,9 +133,34 @@ LOG_EVENT_TYPES = {
 }
 
 SUPPORTED_REALTIME_VOICES = ("aira", "marin", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
+SUPPORTED_COMMUNICATION_STYLES = ("warm_regional", "neutral_support", "concise_technical")
 SEARCHUNIFY_HIGHLIGHT_START = "___su-highlight-start___"
 SEARCHUNIFY_HIGHLIGHT_END = "___su-highlight-end___"
 KNOWLEDGE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+QUALYS_DOMAIN_TERMS = (
+    "Qualys",
+    "VMDR",
+    "Cloud Agent",
+    "Asset Inventory",
+    "Authentication Record",
+    "Auth Record",
+    "Scanner Appliance",
+    "ServiceNow",
+    "Jira",
+    "Splunk",
+    "SIEM",
+    "Connector",
+    "API",
+    "XML API",
+    "QID",
+    "WAS",
+    "Scan Profile",
+    "Option Profile",
+    "QID",
+    "BUNDLE",
+    "PATCH",
+    "vulnerability",
+)
 
 app = FastAPI()
 
@@ -142,10 +168,11 @@ app = FastAPI()
 @app.on_event("startup")
 async def _log_startup_configuration() -> None:
     logger.info(
-        "Startup config version=%s model=%s voice=%s public_url=%s knowledge_backend=%s/%s",
+        "Startup config version=%s model=%s voice=%s communication_style=%s public_url=%s knowledge_backend=%s/%s",
         APP_FLOW_VERSION,
         OPENAI_MODEL,
         VOICE,
+        COMMUNICATION_STYLE,
         PUBLIC_URL or "<unset>",
         KNOWLEDGE_BACKEND_NAME if _knowledge_backend_enabled() else "<disabled>",
         _knowledge_backend_kind() if _knowledge_backend_enabled() else "",
@@ -236,6 +263,14 @@ def _resolve_realtime_voice(value: str) -> str:
     return "coral"
 
 
+def _resolve_communication_style(value: str) -> str:
+    style = value.strip().lower()
+    if style in SUPPORTED_COMMUNICATION_STYLES:
+        return style
+    logger.warning("Unsupported communication style `%s`; falling back to `warm_regional`.", value)
+    return "warm_regional"
+
+
 def _normalize_text(value: str) -> str:
     return " ".join(value.strip().lower().split())
 
@@ -320,48 +355,44 @@ def _extract_error_tokens(text: str) -> list[str]:
     return _dedupe_preserve_order(matches, limit=4)
 
 
+def _extract_preserved_domain_terms(text: str) -> list[str]:
+    matches: list[tuple[int, str]] = []
+    for phrase in QUALYS_DOMAIN_TERMS:
+        for match in re.finditer(re.escape(phrase), text, flags=re.IGNORECASE):
+            matches.append((match.start(), match.group(0).strip()))
+    matches.sort(key=lambda item: item[0])
+    return _dedupe_preserve_order([value for _, value in matches], limit=7)
+
+
 def _clean_human_transcript(text: str) -> str:
     collapsed = " ".join(text.strip().split())
     if not collapsed:
         return ""
 
-    lowered = collapsed.lower()
-    lowered = re.sub(
+    cleaned = re.sub(
         r"\b(?:uh+|um+|umm+|hmm+|ah+|oh+|okay+|ok+|acha|actually|basically|literally|please|plz|just|kind of|sort of|you know|i mean)\b",
         " ",
-        lowered,
+        collapsed,
+        flags=re.IGNORECASE,
     )
-    lowered = re.sub(
+    cleaned = re.sub(
         r"\b(?:hi|hello|hey|thanks|thank you|can you help|could you help|i need help|need help)\b",
         " ",
-        lowered,
+        cleaned,
+        flags=re.IGNORECASE,
     )
-    lowered = re.sub(r"[^\w\s/-]", " ", lowered)
-    lowered = re.sub(r"\b(\w+)(?:\s+\1\b)+", r"\1", lowered)
-    return " ".join(lowered.split())
+    cleaned = re.sub(r"[^\w\s/-]", " ", cleaned)
+    cleaned = re.sub(r"\b(\w+)(?:\s+\1\b)+", r"\1", cleaned, flags=re.IGNORECASE)
+    return " ".join(cleaned.split())
 
 
 def _rewrite_support_query(query: str, product_area: str | None) -> str:
     cleaned = _clean_human_transcript(query)
-    source_text = cleaned or " ".join(query.strip().split()).lower()
+    source_text = cleaned or " ".join(query.strip().split())
     if not source_text:
         return ""
 
-    phrase_patterns = (
-        "cloud agent",
-        "asset inventory",
-        "asset visibility",
-        "auth record",
-        "authentication record",
-        "scanner appliance",
-        "service now",
-        "servicenow",
-        "sumo logic",
-        "api token",
-        "scan profile",
-        "option profile",
-    )
-    preserved_phrases = [phrase for phrase in phrase_patterns if phrase in source_text]
+    preserved_terms = _extract_preserved_domain_terms(source_text)
     error_tokens = _extract_error_tokens(query)
     stopwords = {
         "a",
@@ -394,17 +425,27 @@ def _rewrite_support_query(query: str, product_area: str | None) -> str:
         "you",
         "your",
     }
-    raw_tokens = re.findall(r"[a-z0-9][a-z0-9_/-]*", source_text)
+    preserved_term_tokens = {
+        token.lower()
+        for term in preserved_terms
+        for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9_/-]*", term)
+    }
+    raw_tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_/-]*", source_text)
     keywords = [
         token
         for token in raw_tokens
-        if len(token) > 1 and token not in stopwords and token not in SUPPORT_PRODUCT.lower().split()
+        if (
+            len(token) > 1
+            and token.lower() not in stopwords
+            and token.lower() not in SUPPORT_PRODUCT.lower().split()
+            and token.lower() not in preserved_term_tokens
+        )
     ]
 
     segments: list[str] = []
     if product_area:
-        segments.append(product_area.strip().lower().replace("_", " "))
-    segments.extend(preserved_phrases)
+        segments.append(product_area.strip().replace("_", " "))
+    segments.extend(preserved_terms)
     segments.extend(error_tokens)
     segments.extend(keywords)
     compact = _dedupe_preserve_order([segment for segment in segments if segment], limit=7)
@@ -412,6 +453,13 @@ def _rewrite_support_query(query: str, product_area: str | None) -> str:
         return " ".join(compact)
     fallback_tokens = _dedupe_preserve_order(raw_tokens, limit=7)
     return " ".join(fallback_tokens)
+
+
+def _build_knowledge_cache_key(query: str, product_area: str | None, backend_kind: str | None = None) -> tuple[str, str]:
+    actual_backend_kind = backend_kind or _knowledge_backend_kind()
+    rewritten_query = _rewrite_support_query(query, product_area)
+    cache_key = f"{actual_backend_kind}|{_normalize_text(rewritten_query)}|{_normalize_text(product_area or '')}"
+    return cache_key, rewritten_query
 
 
 def _build_searchunify_payload(query: str) -> dict[str, Any]:
@@ -585,6 +633,7 @@ def _normalize_generic_results(
                 "snippet": snippet[:1200],
                 "source_type": "generic",
                 "source_name": KNOWLEDGE_BACKEND_NAME,
+                "gpt_context": str(item.get("gptContext") or item.get("gpt_context") or "").strip(),
                 "confidence": round(min(0.99, 0.2 + (score / 12)), 2),
                 "score": round(score, 2),
                 "match_signals": signals,
@@ -642,6 +691,7 @@ def _normalize_searchunify_results(
                 "content_tag": str(hit.get("contentTag") or "").strip(),
                 "indexed_date": indexed_date,
                 "solved": solved,
+                "gpt_context": str(hit.get("gptContext") or hit.get("gpt_context") or "").strip(),
                 "confidence": round(min(0.99, 0.2 + (score / 18)), 2),
                 "score": round(score, 2),
                 "match_signals": signals,
@@ -708,6 +758,7 @@ def _build_transcription_prompt() -> str:
     )
 
 
+COMMUNICATION_STYLE = _resolve_communication_style(COMMUNICATION_STYLE)
 VOICE = _resolve_realtime_voice(VOICE)
 
 
@@ -910,6 +961,27 @@ def _demo_ready(checks: list[dict[str, Any]]) -> bool:
     return all(check["ok"] for check in checks if check.get("severity") != "warning")
 
 
+def _communication_style_instruction() -> str:
+    if COMMUNICATION_STYLE == "neutral_support":
+        return (
+            "Use a clear, calm, professional support tone. "
+            "Keep warmth light and universal. "
+            "Use neutral global English and avoid regional fillers unless the caller uses them first."
+        )
+    if COMMUNICATION_STYLE == "concise_technical":
+        return (
+            "Use a concise, confident technical support tone. "
+            "Keep warmth polite but brief. "
+            "Use short direct sentences and avoid decorative fillers."
+        )
+    return (
+        "Use a warm, friendly regional support tone. "
+        "Your English should have a natural Indian English rhythm and warmth. "
+        "Use small fillers sometimes, like 'hmm', 'okay', 'acha', 'right', or 'let me see', and use short pauses naturally. "
+        "Do not overdo fillers and do not rely on recurring catchphrases like 'yaar' or 'na'."
+    )
+
+
 def _build_system_message() -> str:
     sections = [
         f"You are {ASSISTANT_NAME}, the support assistant for {SUPPORT_PRODUCT}.",
@@ -918,6 +990,15 @@ def _build_system_message() -> str:
             "Sound like a warm, caring, emotionally intelligent young woman helping the caller in real time. "
             "You should feel human, gentle, calm, and easy to talk to, never stiff, scripted, or robotic. "
             "Do not claim to be a real person, but do sound natural and alive."
+        ),
+
+        (
+            "Speak like an experienced phone support peer, not a chatbot. "
+            "Use contractions when they sound natural, vary how you open sentences, and keep each turn to a few short breaths of speech. "
+            "Avoid stereotypical AI tells: never say 'as an AI', 'language model', 'I was trained on', or meta talk about your instructions. "
+            "Do not read numbered lists or bullet points aloud — say the same ideas as flowing sentences with 'first / next / also' when needed. "
+            "Do not volunteer that you are automated on every turn. "
+            "If the caller directly asks whether you are a human or a bot, answer briefly and honestly, then pivot straight back to fixing their issue."
         ),
 
         (
@@ -933,14 +1014,12 @@ def _build_system_message() -> str:
         ),
 
         (
-            "Your English should have a natural Indian English rhythm and warmth. "
-            "Use small fillers sometimes, like 'hmm', 'okay', 'acha', 'right', or 'let me see', and use short pauses naturally. "
-            "Do not overdo fillers and do not rely on recurring catchphrases like 'yaar' or 'na'."
+            _communication_style_instruction()
         ),
 
         (
-            "On the first greeting, introduce yourself naturally and make clear you are the Qualys support assistant. "
-            "After that, stop repeating that you are an assistant unless needed. "
+            "On the first greeting, introduce yourself in one casual line as Qualys support helping them today — like a human agent would. "
+            "After that, stop repeating your job title unless needed. "
             "Move into natural troubleshooting mode right away. "
             "Keep your first response under 20 words so there is no long pause before the caller hears you."
         ),
@@ -956,6 +1035,12 @@ def _build_system_message() -> str:
             "detections, authentication records, APIs, connectors, and integrations. "
             "If the caller describes something informally, gently translate it into the right Qualys terminology. "
             "Do not make risky assumptions between products like VMDR and WAS. Clarify when there is ambiguity."
+        ),
+
+        (
+            "Keep domain-specific terms unchanged. "
+            "Never simplify, paraphrase, or replace official Qualys product names, module names, API names, QIDs, connector names, "
+            "error codes, or caller-provided technical terms. Repeat them exactly as the caller said them or exactly as they appear in grounded results."
         ),
 
         (
@@ -1178,7 +1263,9 @@ def _build_direct_response_hint(call_state: CallState) -> str:
         "For your next response, answer directly in simple human English. "
         f"Keep the answer grounded in {product_area}. "
         f"Caller issue: {issue_text}. "
-        "Do not describe your internal process. Give a short explanation and the best next step."
+        "Do not describe your internal process. "
+        "Keep Qualys product names, API names, QIDs, error text, and other technical terms exactly as given. "
+        "Give a short explanation and the best next step."
     )
 
 
@@ -1224,6 +1311,7 @@ def _build_knowledge_grounding_hint(result: dict[str, Any], call_state: CallStat
         "Use the retrieved guidance silently in the background.",
         "Do not say you searched, checked a source, found an article, or used the knowledge base.",
         "Answer directly in simple human language first.",
+        "Keep Qualys product names, API names, QIDs, connector names, and error text exactly as written.",
         "Do not mention the article title or source name out loud unless the caller explicitly asks.",
         f"Use the retrieved results as the source of truth for product-specific facts and next steps. Query used: `{query}`.",
     ]
@@ -1337,9 +1425,8 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
             "note": "Knowledge backend is not configured.",
         }
 
-    rewritten_query = _rewrite_support_query(query, product_area)
     backend_kind = _knowledge_backend_kind()
-    cache_key = f"{backend_kind}|{_normalize_text(rewritten_query)}|{_normalize_text(product_area or '')}"
+    cache_key, rewritten_query = _build_knowledge_cache_key(query, product_area, backend_kind)
     logger.info("_knowledge_lookup_sync - Query rewritten: '%s' -> '%s', backend_kind='%s'", 
                _safe_preview(query, limit=100), _safe_preview(rewritten_query, limit=100), backend_kind)
     if LOG_KNOWLEDGE_DETAILS:
@@ -1426,14 +1513,32 @@ def _knowledge_lookup_sync(query: str, product_area: str | None) -> dict[str, An
         "note": note,
         **grounding,
     }
+    top_gpt_contexts = [
+        _safe_preview(str(item.get("gpt_context") or item.get("gptContext") or ""), limit=100)
+        for item in normalized_results[:3]
+    ]
+    logger.info(
+        "_knowledge_lookup_sync - Knowledge results prepared: count=%s best_confidence=%s response_mode=%s conflict=%s top_titles=%s top_gpt_contexts=%s",
+        len(normalized_results),
+        result.get("best_confidence"),
+        result.get("response_mode"),
+        result.get("conflict"),
+        [
+            _safe_preview(str(item.get("title") or ""), limit=80)
+            for item in normalized_results[:3]
+        ],
+        top_gpt_contexts,
+    )
     if LOG_KNOWLEDGE_DETAILS:
         logger.debug(
-            "Knowledge lookup normalized results=%s best_confidence=%s response_mode=%s conflict=%s best_title=%s",
+            "Knowledge lookup normalized results=%s best_confidence=%s response_mode=%s conflict=%s best_title=%s results=%s top_gpt_contexts=%s",
             len(normalized_results),
             result.get("best_confidence"),
             result.get("response_mode"),
             result.get("conflict"),
             _safe_preview((result.get("best_result") or {}).get("title") or ""),
+            _safe_preview(normalized_results, limit=700),
+            top_gpt_contexts,
         )
     _cache_set(cache_key, result)
     return result
@@ -1623,6 +1728,7 @@ async def health():
         "ok": True,
         "model": OPENAI_MODEL,
         "voice": VOICE,
+        "communication_style": COMMUNICATION_STYLE,
         "assistant_name": ASSISTANT_NAME,
         "support_product": SUPPORT_PRODUCT,
         "transcription_model": TRANSCRIPTION_MODEL,
@@ -1766,6 +1872,7 @@ async def handle_media_stream(websocket: WebSocket):
         knowledge_flow_active = False
         knowledge_prefetch_query = ""
         knowledge_prefetch_product_area = ""
+        knowledge_prefetch_cache_key = ""
         knowledge_prefetch_task: asyncio.Task[dict[str, Any]] | None = None
         knowledge_prefetch_result: dict[str, Any] | None = None
         active_response_id: str | None = None
@@ -1844,13 +1951,14 @@ async def handle_media_stream(websocket: WebSocket):
             pending_user_turn_task = None
 
         def cancel_knowledge_prefetch() -> None:
-            nonlocal knowledge_prefetch_task, knowledge_prefetch_result, knowledge_prefetch_query, knowledge_prefetch_product_area, knowledge_flow_active
+            nonlocal knowledge_prefetch_task, knowledge_prefetch_result, knowledge_prefetch_query, knowledge_prefetch_product_area, knowledge_prefetch_cache_key, knowledge_flow_active
             if knowledge_prefetch_task is not None and not knowledge_prefetch_task.done():
                 knowledge_prefetch_task.cancel()
             knowledge_prefetch_task = None
             knowledge_prefetch_result = None
             knowledge_prefetch_query = ""
             knowledge_prefetch_product_area = ""
+            knowledge_prefetch_cache_key = ""
             knowledge_flow_active = False
 
         async def schedule_interrupt() -> None:
@@ -1954,19 +2062,16 @@ async def handle_media_stream(websocket: WebSocket):
 
         async def get_server_managed_knowledge_result(query: str, product_area: str | None) -> dict[str, Any]:
             nonlocal knowledge_prefetch_result
-            normalized_query = _normalize_text(query)
-            normalized_product_area = _normalize_text(product_area or "")
+            search_cache_key, _ = _build_knowledge_cache_key(query, product_area)
             if (
                 knowledge_prefetch_result is not None
-                and normalized_query == _normalize_text(knowledge_prefetch_query)
-                and normalized_product_area == _normalize_text(knowledge_prefetch_product_area)
+                and search_cache_key == knowledge_prefetch_cache_key
             ):
                 return knowledge_prefetch_result
 
             if (
                 knowledge_prefetch_task is not None
-                and normalized_query == _normalize_text(knowledge_prefetch_query)
-                and normalized_product_area == _normalize_text(knowledge_prefetch_product_area)
+                and search_cache_key == knowledge_prefetch_cache_key
             ):
                 try:
                     knowledge_prefetch_result = await knowledge_prefetch_task
@@ -1982,10 +2087,15 @@ async def handle_media_stream(websocket: WebSocket):
                     }
                 return knowledge_prefetch_result
 
+            cached_result = _cache_get(search_cache_key)
+            if cached_result is not None:
+                logger.info("get_server_managed_knowledge_result - Reusing cached knowledge result for key=%s", _safe_preview(search_cache_key, limit=150))
+                return cached_result
+
             return await _knowledge_lookup(query, product_area, call_logger)
 
         async def run_grounded_response() -> None:
-            nonlocal knowledge_flow_active, knowledge_prefetch_task, knowledge_prefetch_result, knowledge_prefetch_query, knowledge_prefetch_product_area
+            nonlocal knowledge_flow_active, knowledge_prefetch_task, knowledge_prefetch_result, knowledge_prefetch_query, knowledge_prefetch_product_area, knowledge_prefetch_cache_key
             query = (call_state.last_user_transcript or call_state.issue_summary).strip()
             if not query:
                 await send_system_message(_build_direct_response_hint(call_state), "direct answer")
@@ -1993,15 +2103,31 @@ async def handle_media_stream(websocket: WebSocket):
                 return
 
             product_area = _best_product_area_hint(call_state)
+            search_cache_key, rewritten_query = _build_knowledge_cache_key(query, product_area)
             knowledge_flow_active = True
             knowledge_prefetch_query = query
             knowledge_prefetch_product_area = product_area or ""
-            knowledge_prefetch_result = None
-            call_logger.info("Knowledge lookup starting product_area=%s query=%s", product_area or "", _safe_preview(query, limit=220))
-            knowledge_prefetch_task = asyncio.create_task(
-                _knowledge_lookup(query, product_area, call_logger),
-                name="knowledge-prefetch",
-            )
+            knowledge_prefetch_cache_key = search_cache_key
+            knowledge_prefetch_result = _cache_get(search_cache_key)
+            knowledge_prefetch_task = None
+            if knowledge_prefetch_result is not None:
+                call_logger.info(
+                    "Reusing cached knowledge result product_area=%s query=%s rewritten_query=%s",
+                    product_area or "",
+                    _safe_preview(query, limit=220),
+                    _safe_preview(rewritten_query, limit=120),
+                )
+            else:
+                call_logger.info(
+                    "Knowledge lookup starting product_area=%s query=%s rewritten_query=%s",
+                    product_area or "",
+                    _safe_preview(query, limit=220),
+                    _safe_preview(rewritten_query, limit=120),
+                )
+                knowledge_prefetch_task = asyncio.create_task(
+                    _knowledge_lookup(query, product_area, call_logger),
+                    name="knowledge-prefetch",
+                )
             try:
                 grounding = await get_server_managed_knowledge_result(query, product_area)
                 knowledge_prefetch_result = grounding
@@ -2124,8 +2250,27 @@ async def handle_media_stream(websocket: WebSocket):
                     tool_output = await get_server_managed_knowledge_result(query, product_area)
                 else:
                     tool_output = await _knowledge_lookup(query, product_area, call_logger)
-                logger.info("handle_tool_call - search_qualys_support_knowledge completed: result_count=%s, best_confidence=%s", 
-                           len(tool_output.get("results") or []), tool_output.get("best_confidence"))
+                results = tool_output.get("results") or []
+                top_titles = [
+                    _safe_preview(str(item.get("title") or ""), limit=80)
+                    for item in results[:3]
+                ]
+                top_snippets = [
+                    _safe_preview(str(item.get("snippet") or ""), limit=120)
+                    for item in results[:3]
+                ]
+                top_gpt_contexts = [
+                    _safe_preview(str(item.get("gpt_context") or item.get("gptContext") or ""), limit=100)
+                    for item in results[:3]
+                ]
+                logger.info(
+                    "handle_tool_call - search_qualys_support_knowledge completed: result_count=%s best_confidence=%s top_titles=%s top_snippets=%s top_gpt_contexts=%s",
+                    len(results),
+                    tool_output.get("best_confidence"),
+                    top_titles,
+                    top_snippets,
+                    top_gpt_contexts,
+                )
             else:
                 logger.warning("handle_tool_call - Unknown tool name: '%s'", tool_name)
                 tool_output = {"error": f"Unsupported tool: {tool_name}"}

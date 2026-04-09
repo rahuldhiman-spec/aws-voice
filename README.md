@@ -44,7 +44,7 @@ Optional variables you may want to set:
 - `OPENAI_WS_URL` (override the full Realtime WebSocket URL)
 - `OPENAI_PROJECT`, `OPENAI_ORGANIZATION` for keys scoped to a specific project/org context
 - `ASSISTANT_NAME`, `SUPPORT_PRODUCT`
-- `VOICE` (default: `coral`), `SYSTEM_MESSAGE`, `AI_SPEAKS_FIRST`
+- `VOICE` (default: `verse`), `SYSTEM_MESSAGE`, `AI_SPEAKS_FIRST`
 - `INTERRUPT_DEBOUNCE_MS` to ignore tiny bursts of noise before interrupting speech
 - `TRANSCRIPTION_MODEL`, `TRANSCRIPTION_LANGUAGE`, `TRANSCRIPTION_NOISE_REDUCTION` to tune phone-call transcription and noise handling
 - `KNOWLEDGE_BACKEND_URL` and related auth env vars to connect SearchUnify or another support-search backend
