@@ -43,7 +43,7 @@ Browser:
 
 FastAPI backend:
 
-- serves `/` and `/static/*`
+- serves `/` and `/socket/static/*`
 - returns safe browser session config from `/api/realtime-config`
 - creates the authenticated OpenAI Realtime call from `/api/realtime-call`
 - stores session memory through `/api/tool/remember-context` and `/api/tool/get-context`

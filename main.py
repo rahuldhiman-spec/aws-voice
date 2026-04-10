@@ -1593,7 +1593,7 @@ def _demo_ready(checks: list[dict[str, Any]]) -> bool:
 
 app = FastAPI(title="Qualys WebRTC Voice Demo")
 if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/socket/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.on_event("startup")
