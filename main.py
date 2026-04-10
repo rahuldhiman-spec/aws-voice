@@ -1646,7 +1646,7 @@ async def health():
     }
 
 
-@app.get("/api/realtime-config", response_class=JSONResponse)
+@app.get("/socket/api/realtime-config", response_class=JSONResponse)
 async def realtime_config():
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is missing.")
@@ -1667,7 +1667,7 @@ async def realtime_config():
     }
 
 
-@app.post("/api/realtime-call", response_class=PlainTextResponse)
+@app.post("/socket/api/realtime-call", response_class=PlainTextResponse)
 async def realtime_call(request: RealtimeCallRequest):
     try:
         answer_sdp = await __import__("asyncio").to_thread(_create_realtime_call_sdp, request.sdp)
@@ -1676,14 +1676,14 @@ async def realtime_call(request: RealtimeCallRequest):
     return PlainTextResponse(answer_sdp)
 
 
-@app.post("/api/session/reset", response_class=JSONResponse)
+@app.post("/socket/api/session/reset", response_class=JSONResponse)
 async def reset_session(request: SessionRequest):
     _reset_session_state(request.session_id)
     _get_or_create_session_state(request.session_id)
     return {"ok": True, "session_id": request.session_id}
 
 
-@app.post("/api/context/transcript", response_class=JSONResponse)
+@app.post("/socket/api/context/transcript", response_class=JSONResponse)
 async def update_transcript(request: TranscriptRequest):
     call_state = _get_or_create_session_state(request.session_id)
     route_changed = call_state.apply_user_transcript(request.transcript)
@@ -1700,7 +1700,7 @@ async def update_transcript(request: TranscriptRequest):
     }
 
 
-@app.post("/api/tool/remember-context", response_class=JSONResponse)
+@app.post("/socket/api/tool/remember-context", response_class=JSONResponse)
 async def remember_context(request: ContextPayloadRequest):
     call_state = _get_or_create_session_state(request.session_id)
     call_state.remember_context(request.payload)
@@ -1711,7 +1711,7 @@ async def remember_context(request: ContextPayloadRequest):
     }
 
 
-@app.post("/api/tool/get-context", response_class=JSONResponse)
+@app.post("/socket/api/tool/get-context", response_class=JSONResponse)
 async def get_context(request: SessionRequest):
     call_state = _get_or_create_session_state(request.session_id)
     return {
@@ -1720,7 +1720,7 @@ async def get_context(request: SessionRequest):
     }
 
 
-@app.post("/api/tool/search", response_class=JSONResponse)
+@app.post("/socket/api/tool/search", response_class=JSONResponse)
 async def search_tool(request: SearchRequest):
     call_state = _get_or_create_session_state(request.session_id)
     query, product_area = _best_search_query_for_state(call_state, request.query, request.product_area)

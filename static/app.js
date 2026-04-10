@@ -134,7 +134,7 @@ async function syncTranscriptContext(transcript) {
   }
 
   try {
-    await fetchJson("/api/context/transcript", {
+    await fetchJson("/socket/api/context/transcript", {
       method: "POST",
       body: JSON.stringify({
         session_id: state.sessionId,
@@ -153,7 +153,7 @@ async function invokeTool(name, args) {
 
   try {
     if (name === "remember_call_context") {
-      return await fetchJson("/api/tool/remember-context", {
+      return await fetchJson("/socket/api/tool/remember-context", {
         method: "POST",
         body: JSON.stringify({
           session_id: state.sessionId,
@@ -163,7 +163,7 @@ async function invokeTool(name, args) {
     }
 
     if (name === "get_call_context") {
-      return await fetchJson("/api/tool/get-context", {
+      return await fetchJson("/socket/api/tool/get-context", {
         method: "POST",
         body: JSON.stringify({
           session_id: state.sessionId,
@@ -172,7 +172,7 @@ async function invokeTool(name, args) {
     }
 
     if (name === "search_qualys_support_knowledge") {
-      return await fetchJson("/api/tool/search", {
+      return await fetchJson("/socket/api/tool/search", {
         method: "POST",
         body: JSON.stringify({
           session_id: state.sessionId,
@@ -258,7 +258,7 @@ async function handleRealtimeEvent(event) {
 }
 
 async function createRealtimeCall(offerSdp) {
-  const response = await fetch("/api/realtime-call", {
+  const response = await fetch("/socket/api/realtime-call", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -299,7 +299,7 @@ async function disconnect({ resetSession = true, reason = "ended", message = "" 
 
   try {
     if (resetSession && state.sessionId) {
-      await fetchJson("/api/session/reset", {
+      await fetchJson("/socket/api/session/reset", {
         method: "POST",
         body: JSON.stringify({ session_id: state.sessionId }),
       });
@@ -360,12 +360,12 @@ async function connect() {
   try {
     state.sessionId = generateSessionId();
 
-    await fetchJson("/api/session/reset", {
+    await fetchJson("/socket/api/session/reset", {
       method: "POST",
       body: JSON.stringify({ session_id: state.sessionId }),
     });
 
-    state.config = await fetchJson("/api/realtime-config");
+    state.config = await fetchJson("/socket/api/realtime-config");
     applyBranding(state.config);
 
     state.localStream = await navigator.mediaDevices.getUserMedia({
