@@ -436,8 +436,23 @@ def _resolve_realtime_voice(value: str) -> str:
     return "shimmer"
 
 
+def _resolve_static_dir() -> Path:
+    primary_dir = Path(__file__).with_name("static")
+    legacy_dir = Path(__file__).parent / "socket" / "static"
+    for candidate in (primary_dir, legacy_dir):
+        if (candidate / "index.html").exists():
+            if candidate == legacy_dir:
+                logger.warning(
+                    "Using legacy static asset directory `%s`; prefer `%s`.",
+                    legacy_dir,
+                    primary_dir,
+                )
+            return candidate
+    return primary_dir
+
+
 VOICE = _resolve_realtime_voice(VOICE)
-STATIC_DIR = Path(__file__).with_name("static")
+STATIC_DIR = _resolve_static_dir()
 KNOWLEDGE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 SESSION_STATE: dict[str, tuple[float, "CallState"]] = {}
 
@@ -1593,7 +1608,8 @@ def _demo_ready(checks: list[dict[str, Any]]) -> bool:
 
 app = FastAPI(title="Qualys WebRTC Voice Demo")
 if STATIC_DIR.exists():
-    app.mount("/socket/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/socket/static", StaticFiles(directory=STATIC_DIR), name="legacy-static")
 
 
 @app.on_event("startup")
@@ -1646,6 +1662,7 @@ async def health():
     }
 
 
+@app.get("/api/realtime-config", response_class=JSONResponse)
 @app.get("/socket/api/realtime-config", response_class=JSONResponse)
 async def realtime_config():
     if not OPENAI_API_KEY:
@@ -1667,6 +1684,7 @@ async def realtime_config():
     }
 
 
+@app.post("/api/realtime-call", response_class=PlainTextResponse)
 @app.post("/socket/api/realtime-call", response_class=PlainTextResponse)
 async def realtime_call(request: RealtimeCallRequest):
     try:
@@ -1676,6 +1694,7 @@ async def realtime_call(request: RealtimeCallRequest):
     return PlainTextResponse(answer_sdp)
 
 
+@app.post("/api/session/reset", response_class=JSONResponse)
 @app.post("/socket/api/session/reset", response_class=JSONResponse)
 async def reset_session(request: SessionRequest):
     _reset_session_state(request.session_id)
@@ -1683,6 +1702,7 @@ async def reset_session(request: SessionRequest):
     return {"ok": True, "session_id": request.session_id}
 
 
+@app.post("/api/context/transcript", response_class=JSONResponse)
 @app.post("/socket/api/context/transcript", response_class=JSONResponse)
 async def update_transcript(request: TranscriptRequest):
     call_state = _get_or_create_session_state(request.session_id)
@@ -1700,6 +1720,7 @@ async def update_transcript(request: TranscriptRequest):
     }
 
 
+@app.post("/api/tool/remember-context", response_class=JSONResponse)
 @app.post("/socket/api/tool/remember-context", response_class=JSONResponse)
 async def remember_context(request: ContextPayloadRequest):
     call_state = _get_or_create_session_state(request.session_id)
@@ -1711,6 +1732,7 @@ async def remember_context(request: ContextPayloadRequest):
     }
 
 
+@app.post("/api/tool/get-context", response_class=JSONResponse)
 @app.post("/socket/api/tool/get-context", response_class=JSONResponse)
 async def get_context(request: SessionRequest):
     call_state = _get_or_create_session_state(request.session_id)
@@ -1720,6 +1742,7 @@ async def get_context(request: SessionRequest):
     }
 
 
+@app.post("/api/tool/search", response_class=JSONResponse)
 @app.post("/socket/api/tool/search", response_class=JSONResponse)
 async def search_tool(request: SearchRequest):
     call_state = _get_or_create_session_state(request.session_id)

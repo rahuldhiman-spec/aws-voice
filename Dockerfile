@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py README.md ./.env ./
-COPY static ./socket/static
+COPY static ./static
 COPY scripts ./scripts
 
 EXPOSE 3300

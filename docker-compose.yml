@@ -9,7 +9,7 @@ services:
       - .env
     volumes:
       - ./main.py:/app/main.py:ro
-      - ./socket/static:/app/socket/static:ro
+      - ./static:/app/static:ro
       - ./scripts:/app/scripts:ro
       - ./.env:/app/.env:ro
       - ./README.md:/app/README.md:ro

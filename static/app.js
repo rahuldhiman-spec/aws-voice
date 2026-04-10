@@ -22,6 +22,23 @@ const refs = {
   remoteAudio: document.getElementById("remoteAudio"),
 };
 
+const appBaseUrl = new URL(".", window.location.href);
+
+function buildAppUrl(path) {
+  return new URL(String(path || "").replace(/^\/+/, ""), appBaseUrl).toString();
+}
+
+const routes = {
+  health: buildAppUrl("health"),
+  transcript: buildAppUrl("api/context/transcript"),
+  rememberContext: buildAppUrl("api/tool/remember-context"),
+  getContext: buildAppUrl("api/tool/get-context"),
+  search: buildAppUrl("api/tool/search"),
+  realtimeCall: buildAppUrl("api/realtime-call"),
+  sessionReset: buildAppUrl("api/session/reset"),
+  realtimeConfig: buildAppUrl("api/realtime-config"),
+};
+
 function generateSessionId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -134,7 +151,7 @@ async function syncTranscriptContext(transcript) {
   }
 
   try {
-    await fetchJson("/socket/api/context/transcript", {
+    await fetchJson(routes.transcript, {
       method: "POST",
       body: JSON.stringify({
         session_id: state.sessionId,
@@ -153,7 +170,7 @@ async function invokeTool(name, args) {
 
   try {
     if (name === "remember_call_context") {
-      return await fetchJson("/socket/api/tool/remember-context", {
+      return await fetchJson(routes.rememberContext, {
         method: "POST",
         body: JSON.stringify({
           session_id: state.sessionId,
@@ -163,7 +180,7 @@ async function invokeTool(name, args) {
     }
 
     if (name === "get_call_context") {
-      return await fetchJson("/socket/api/tool/get-context", {
+      return await fetchJson(routes.getContext, {
         method: "POST",
         body: JSON.stringify({
           session_id: state.sessionId,
@@ -172,7 +189,7 @@ async function invokeTool(name, args) {
     }
 
     if (name === "search_qualys_support_knowledge") {
-      return await fetchJson("/socket/api/tool/search", {
+      return await fetchJson(routes.search, {
         method: "POST",
         body: JSON.stringify({
           session_id: state.sessionId,
@@ -258,7 +275,7 @@ async function handleRealtimeEvent(event) {
 }
 
 async function createRealtimeCall(offerSdp) {
-  const response = await fetch("/socket/api/realtime-call", {
+  const response = await fetch(routes.realtimeCall, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -299,7 +316,7 @@ async function disconnect({ resetSession = true, reason = "ended", message = "" 
 
   try {
     if (resetSession && state.sessionId) {
-      await fetchJson("/socket/api/session/reset", {
+      await fetchJson(routes.sessionReset, {
         method: "POST",
         body: JSON.stringify({ session_id: state.sessionId }),
       });
@@ -360,12 +377,12 @@ async function connect() {
   try {
     state.sessionId = generateSessionId();
 
-    await fetchJson("/socket/api/session/reset", {
+    await fetchJson(routes.sessionReset, {
       method: "POST",
       body: JSON.stringify({ session_id: state.sessionId }),
     });
 
-    state.config = await fetchJson("/socket/api/realtime-config");
+    state.config = await fetchJson(routes.realtimeConfig);
     applyBranding(state.config);
 
     state.localStream = await navigator.mediaDevices.getUserMedia({
@@ -513,7 +530,7 @@ async function bootstrap() {
   setHint("Allow microphone access when prompted.");
 
   try {
-    state.health = await fetchJson("/health");
+    state.health = await fetchJson(routes.health);
     applyBranding(state.health);
   } catch (error) {
     logEvent(`Health check failed: ${trimText(error.message || String(error), 120)}`);

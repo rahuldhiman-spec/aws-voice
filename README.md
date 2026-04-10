@@ -43,7 +43,7 @@ Browser:
 
 FastAPI backend:
 
-- serves `/` and `/socket/static/*`
+- serves `/` and `/static/*`
 - returns safe browser session config from `/api/realtime-config`
 - creates the authenticated OpenAI Realtime call from `/api/realtime-call`
 - stores session memory through `/api/tool/remember-context` and `/api/tool/get-context`
@@ -180,6 +180,10 @@ That means the UI and API become available at paths like:
 - `https://your-domain.example/socket/invoke/health`
 - `https://your-domain.example/socket/invoke/api/realtime-config`
 - `https://your-domain.example/socket/invoke/api/realtime-call`
+
+Legacy `/socket/static/*` and `/socket/api/*` aliases remain available for older deployments, but new clients should use `/static/*` and `/api/*`.
+
+`/incoming-call` belongs to the retired phone-call flow. If you still see requests for that path in production logs, remove the old probe or webhook source instead of pointing it at this browser-first app.
 
 ## Production note
 
