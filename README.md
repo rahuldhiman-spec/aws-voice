@@ -2,28 +2,29 @@
 
 Browser-first Qualys support demo built on the OpenAI Realtime API, FastAPI, and SearchUnify grounding.
 
-The old phone-call media bridge is gone. The browser now connects directly to OpenAI over WebRTC, while the FastAPI app serves:
+The old phone-call media bridge is gone. The browser now creates the WebRTC peer connection locally, while the FastAPI app handles the authenticated OpenAI call setup and serves:
 
 - the desktop demo UI
+- secure Realtime call setup so the browser never receives the long-lived OpenAI API key
 - SearchUnify-backed grounding tools
 - per-session call memory
 - health and demo-readiness endpoints
 
 ## What the app does
 
-- opens a direct WebRTC session from the browser to the OpenAI Realtime API
+- opens a browser WebRTC session with backend-mediated OpenAI call setup
 - keeps the conversation voice-first with live caller and assistant transcript panels
 - preserves Qualys support context across turns with backend memory tools
 - grounds exact troubleshooting, error details, API facts, and integration questions with SearchUnify when the model decides it needs them
 - exposes a polished desktop-first demo interface instead of a phone-call flow
 
-## Important development note
+## Security note
 
-This version intentionally exposes a long-lived OpenAI API key to the browser because that is what the demo currently wants.
+This version keeps the long-lived OpenAI API key on the backend.
 
-That is acceptable only for development or tightly controlled demos.
+The browser sends only its SDP offer to `/api/realtime-call`, and the FastAPI server uses the server-side key when it calls OpenAI `POST /v1/realtime/calls`.
 
-For production, use the OpenAI-recommended short-lived auth flow instead of shipping a long-lived key to the client.
+That removes the original browser key exposure risk while preserving the same browser-based WebRTC user experience.
 
 Official OpenAI references used for this migration:
 
@@ -36,13 +37,15 @@ Browser:
 
 - captures microphone audio
 - creates the WebRTC peer connection
+- sends the SDP offer to `/api/realtime-call`
 - sends and receives Realtime events on the data channel
 - handles model tool calls in the browser and forwards them to the FastAPI backend
 
 FastAPI backend:
 
 - serves `/` and `/static/*`
-- returns browser session config from `/api/realtime-config`
+- returns safe browser session config from `/api/realtime-config`
+- creates the authenticated OpenAI Realtime call from `/api/realtime-call`
 - stores session memory through `/api/tool/remember-context` and `/api/tool/get-context`
 - runs SearchUnify lookups through `/api/tool/search`
 
@@ -51,6 +54,7 @@ FastAPI backend:
 - `GET /`
 - `GET /health`
 - `GET /api/realtime-config`
+- `POST /api/realtime-call`
 - `POST /api/session/reset`
 - `POST /api/context/transcript`
 - `POST /api/tool/remember-context`
@@ -107,8 +111,8 @@ KNOWLEDGE_RESULT_LIMIT=5
 KNOWLEDGE_CACHE_TTL_S=180
 KNOWLEDGE_BACKEND_TIMEOUT_S=8
 KNOWLEDGE_BACKEND_SSL_INSECURE=true
-DEMO_LOOKUP_QUERY=qualys cloud agent not checking in
-DEMO_LOOKUP_PRODUCT_AREA=cloud agent
+DEMO_LOOKUP_QUERY=qualys vulnerability findings are not updating
+DEMO_LOOKUP_PRODUCT_AREA=vulnerability management detection response
 LOG_LEVEL=info
 ```
 
@@ -149,7 +153,7 @@ curl "http://127.0.0.1:3300/demo-readiness?probe_search=true"
 Direct SearchUnify probe:
 
 ```sh
-curl "http://127.0.0.1:3300/demo-search?query=cloud%20agent%20not%20checking%20in&product_area=cloud%20agent"
+curl "http://127.0.0.1:3300/demo-search?query=vulnerability%20findings%20not%20updating&product_area=vulnerability%20management%20detection%20response"
 ```
 
 ## SearchUnify helper
@@ -175,7 +179,8 @@ That means the UI and API become available at paths like:
 - `https://your-domain.example/socket/invoke/`
 - `https://your-domain.example/socket/invoke/health`
 - `https://your-domain.example/socket/invoke/api/realtime-config`
+- `https://your-domain.example/socket/invoke/api/realtime-call`
 
 ## Production note
 
-If you take this beyond demo usage, the first thing to change is browser auth. Keep the UI, tool loop, and SearchUnify wiring, but replace the long-lived browser API key with a short-lived session or server-mediated auth flow.
+The long-lived OpenAI API key no longer reaches the browser. If you take this beyond demo usage, add authentication, rate limiting, and origin controls around `/api/realtime-call`, and consider moving further toward OpenAI short-lived session credentials if you need broader untrusted-client access.

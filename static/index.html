@@ -4,170 +4,43 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Qualys Voice Demo</title>
-    <link rel="stylesheet" href="/socket/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <div class="shell">
-      <header class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Desktop Voice Demo</p>
-          <h1>Qualys support, but it feels like a real live troubleshooting call.</h1>
-          <p class="hero-text">
-            Browser-native WebRTC, live transcripts, SearchUnify grounding, and persistent call memory in one polished demo surface.
-          </p>
-        </div>
-        <div class="hero-status">
-          <div class="status-card">
-            <span class="status-label">Connection</span>
-            <strong id="connectionLabel">Not connected</strong>
-            <span id="connectionDetail" class="status-detail">Mic idle</span>
-          </div>
-          <div class="status-card">
-            <span class="status-label">Realtime Session</span>
-            <strong id="sessionLabel">Waiting</strong>
-            <span id="sessionDetail" class="status-detail">No active session yet</span>
-          </div>
-        </div>
-      </header>
+      <main class="handover-card">
+        <p id="eyebrowLabel" class="eyebrow">Qualys Voice Experience</p>
+        <h1>Start the support call.</h1>
+        <p id="heroText" class="hero-text">
+          A clean handoff screen with one action: launch the live browser-based assistant.
+        </p>
 
-      <main class="dashboard">
-        <section class="panel control-panel">
-          <div class="panel-head">
-            <div>
-              <p class="panel-kicker">Voice Console</p>
-              <h2>Talk naturally. Watch the support state update live.</h2>
-            </div>
-            <div class="orb-cluster">
-              <span class="orb orb-user" id="orbUser"></span>
-              <span class="orb orb-agent" id="orbAgent"></span>
-            </div>
+        <section id="callSurface" class="call-surface" data-state="idle" data-activity="idle">
+          <div class="pulse-ring ring-one" aria-hidden="true"></div>
+          <div class="pulse-ring ring-two" aria-hidden="true"></div>
+          <div class="pulse-ring ring-three" aria-hidden="true"></div>
+
+          <div class="wave-cluster" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
           </div>
 
-          <div class="voice-stage">
-            <div class="wave" aria-hidden="true">
-              <span></span><span></span><span></span><span></span><span></span><span></span>
-            </div>
-            <div class="stage-copy">
-              <strong id="stageTitle">Ready for a desktop browser call</strong>
-              <p id="stageText">Grant microphone access, then the browser connects straight to OpenAI Realtime over WebRTC.</p>
-            </div>
-          </div>
-
-          <div class="button-row">
-            <button id="connectButton" class="primary-button">Start Voice Session</button>
-            <button id="disconnectButton" class="secondary-button" disabled>Disconnect</button>
-            <button id="muteButton" class="ghost-button" disabled>Mute Mic</button>
-          </div>
-
-          <div class="chip-grid">
-            <div class="chip-card">
-              <span class="chip-label">Assistant</span>
-              <strong id="assistantChip">Aira</strong>
-            </div>
-            <div class="chip-card">
-              <span class="chip-label">Model</span>
-              <strong id="modelChip">gpt-realtime</strong>
-            </div>
-            <div class="chip-card">
-              <span class="chip-label">Voice</span>
-              <strong id="voiceChip">shimmer</strong>
-            </div>
-            <div class="chip-card">
-              <span class="chip-label">Knowledge</span>
-              <strong id="knowledgeChip">Disabled</strong>
-            </div>
-            <div class="chip-card">
-              <span class="chip-label">Issue Route</span>
-              <strong id="routeChip">General</strong>
-            </div>
-            <div class="chip-card">
-              <span class="chip-label">Search Hint</span>
-              <strong id="searchChip">Not needed</strong>
-            </div>
-          </div>
-
-          <div class="meta-block">
-            <div>
-              <span class="meta-label">Session ID</span>
-              <code id="sessionIdValue">Not started</code>
-            </div>
-            <div>
-              <span class="meta-label">Public URL</span>
-              <code id="publicUrlValue">Local</code>
-            </div>
-          </div>
-
-          <p id="securityNote" class="security-note">
-            Development-only mode. This browser demo uses an OpenAI API key supplied by the backend.
-          </p>
+          <button id="connectButton" class="call-button" type="button">
+            <span id="buttonLabel">Start Call</span>
+          </button>
         </section>
 
-        <section class="panel transcript-panel">
-          <div class="panel-head compact">
-            <div>
-              <p class="panel-kicker">Live Transcript</p>
-              <h2>Caller and assistant panels update in real time.</h2>
-            </div>
-            <span id="eventBadge" class="badge neutral">Waiting for audio</span>
-          </div>
-
-          <div class="transcript-grid">
-            <section class="transcript-column">
-              <div class="column-head">
-                <span class="speaker-dot caller"></span>
-                <h3>Caller</h3>
-              </div>
-              <div id="callerFeed" class="transcript-feed empty-state">
-                <p>The caller transcript will appear here.</p>
-              </div>
-            </section>
-
-            <section class="transcript-column">
-              <div class="column-head">
-                <span class="speaker-dot assistant"></span>
-                <h3>Assistant</h3>
-              </div>
-              <div id="assistantFeed" class="transcript-feed empty-state">
-                <p>The assistant transcript will appear here.</p>
-              </div>
-            </section>
-          </div>
-        </section>
-
-        <aside class="panel insight-panel">
-          <div class="panel-head compact">
-            <div>
-              <p class="panel-kicker">Support State</p>
-              <h2>Grounding and memory, surfaced clearly for the demo.</h2>
-            </div>
-          </div>
-
-          <div class="insight-stack">
-            <article class="insight-card">
-              <span class="insight-label">Memory Summary</span>
-              <p id="memorySummary">No remembered context yet.</p>
-            </article>
-
-            <article class="insight-card">
-              <span class="insight-label">Last Knowledge Guidance</span>
-              <p id="knowledgeSummary">No knowledge lookup has run yet.</p>
-            </article>
-
-            <article class="insight-card">
-              <span class="insight-label">System Hint</span>
-              <p id="hintSummary">Route and frustration hints will show up here when the backend sees something important.</p>
-            </article>
-
-            <article class="insight-card">
-              <span class="insight-label">Recent Events</span>
-              <ul id="eventLog" class="event-log"></ul>
-            </article>
-          </div>
-        </aside>
+        <p id="callHint" class="call-hint" data-tone="neutral" aria-live="polite">
+          Allow microphone access when prompted.
+        </p>
       </main>
     </div>
 
     <audio id="remoteAudio" autoplay playsinline></audio>
-    <script src="/socket/static/app.js" defer></script>
+    <script src="/static/app.js" defer></script>
   </body>
 </html>

@@ -17,7 +17,7 @@ from urllib import request as urllib_request
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -97,7 +97,7 @@ def _safe_preview(value: Any, limit: int = 220) -> str:
 LOG_LEVEL = (os.getenv("LOG_LEVEL") or "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 logger = logging.getLogger("realtime_voice")
-APP_FLOW_VERSION = "2026-04-09-webrtc-ui-v1"
+APP_FLOW_VERSION = "2026-04-10-webrtc-server-auth"
 
 PORT = _env_int("PORT", 3300)
 PUBLIC_URL = (os.getenv("PUBLIC_URL") or "").strip() or None
@@ -145,599 +145,147 @@ SEARCHUNIFY_SORTBY = (os.getenv("SEARCHUNIFY_SORTBY") or "_score").strip()
 SEARCHUNIFY_ORDER_BY = (os.getenv("SEARCHUNIFY_ORDER_BY") or "desc").strip()
 
 SESSION_STATE_TTL_S = _env_int("SESSION_STATE_TTL_S", 7200)
-DEMO_LOOKUP_QUERY = (os.getenv("DEMO_LOOKUP_QUERY") or "qualys cloud agent not checking in").strip()
-DEMO_LOOKUP_PRODUCT_AREA = (os.getenv("DEMO_LOOKUP_PRODUCT_AREA") or "cloud agent").strip()
+DEMO_LOOKUP_QUERY = (os.getenv("DEMO_LOOKUP_QUERY") or "qualys vulnerability findings are not updating").strip()
+DEMO_LOOKUP_PRODUCT_AREA = (os.getenv("DEMO_LOOKUP_PRODUCT_AREA") or "vulnerability management detection response").strip()
 
 SUPPORTED_REALTIME_VOICES = ("alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
 SEARCHUNIFY_HIGHLIGHT_START = "___su-highlight-start___"
 SEARCHUNIFY_HIGHLIGHT_END = "___su-highlight-end___"
 
 DEFAULT_DYNAMIC_OPENERS = [
-    "Is your scan acting up today?",
-    "Is Cloud Agent not checking in?",
-    "Are detections or assets not showing up the way they should?",
-    "Is a connector or API workflow failing somewhere in Qualys?",
+    "Is VMDR, patching, or remediation not behaving the way you expect?",
+    "Are asset inventory or compliance results not lining up correctly?",
+    "Is a web app, endpoint, or cloud security workflow failing in Qualys?",
+    "Is a vendor risk, file integrity, or custom remediation flow giving you trouble?",
 ]
 QUALYS_DYNAMIC_OPENERS = _env_list("QUALYS_DYNAMIC_OPENERS", DEFAULT_DYNAMIC_OPENERS)
 
-# Product / solution families only.
-# Keep these tightly scoped so routing is more accurate.
+# Product families are intentionally compact and domain-specific.
+# Keep these aligned to the top-level Qualys product areas used for routing.
 
 ISSUE_FAMILY_KEYWORDS: dict[str, tuple[str, ...]] = {
-    # -------------------------------------------------
-    # Core platform and shared services
-    # -------------------------------------------------
-    "platform": (
-        "qualys platform",
-        "cloud platform",
-        "subscription",
-        "pod",
-        "platform outage",
-        "platform issue",
-        "login to qualys",
-        "ui issue",
-        "module not visible",
-        "permissions issue",
-        "role issue",
-        "user role",
-        "rbac",
-        "account settings",
-        "platform sync",
-        "knowledgebase",
-        "kb sync",
-        "signature update",
-        "manifest update",
-    ),
-
-    "api_platform": (
-        "api",
-        "api endpoint",
-        "qualys api",
-        "xml api",
-        "rest api",
-        "api gateway",
-        "api token",
-        "access token",
-        "bearer token",
-        "jwt",
-        "postman",
-        "curl",
-        "sdk",
-        "rate limit",
-        "api auth",
-        "api authentication",
-        "api error",
-        "http 400",
-        "http 401",
-        "http 403",
-        "http 404",
-        "http 429",
-        "http 500",
-        "invalid token",
-        "bad request",
-        "response schema",
-        "pagination",
-    ),
-
-    # -------------------------------------------------
-    # Sensors / collection infrastructure
-    # -------------------------------------------------
-    "scanner_appliance": (
-        "scanner appliance",
-        "scanner",
-        "virtual scanner",
-        "physical scanner",
-        "scanner virtual appliance",
-        "scanner offline",
-        "scanner not responding",
-        "scanner not connected",
-        "scanner activation",
-        "scanner registration",
-        "scanner heartbeat",
-        "scanner status",
-        "scanner unavailable",
-        "internal scanner",
-        "external scanner",
-        "scan engine",
-    ),
-
-    "cloud_agent": (
-        "cloud agent",
-        "qualys agent",
-        "agent",
-        "agent install",
-        "agent installed",
-        "agent activation",
-        "activation id",
-        "customer id",
-        "agent check-in",
-        "agent checkin",
-        "agent not checking in",
-        "agent not reporting",
-        "agent offline",
-        "agent disconnected",
-        "agent manifest",
-        "agent upgrade",
-        "agent uninstall",
-        "agent package",
-        "agent version",
-        "agent log",
-    ),
-
-    "passive_sensor": (
-        "passive sensor",
-        "network passive sensor",
-        "nps",
-        "sensor",
-        "sensor not reporting",
-        "sensor offline",
-        "passive discovery",
-        "passive detection",
-        "passive network sensor",
-        "packet sensor",
-    ),
-
-    "gateway_service": (
-        "qualys gateway service",
-        "gateway service",
-        "qgs",
-        "gateway",
-        "proxy gateway",
-        "sensor gateway",
-    ),
-
-    # -------------------------------------------------
-    # Asset inventory / discovery
-    # -------------------------------------------------
-    "csam_itam_asset_inventory": (
-        "csam",
-        "cybersecurity asset management",
-        "itam",
-        "it asset management",
-        "global assetview",
-        "gav",
-        "assetview",
-        "asset inventory",
-        "inventory",
-        "missing asset",
-        "host asset",
-        "duplicate asset",
-        "asset merge",
-        "asset correlation",
-        "asset discovered",
-        "asset not discovered",
-        "asset lifecycle",
-        "hardware inventory",
-        "software inventory",
-        "eol software",
-        "eos software",
-        "end of support",
-        "end of life",
-        "asset criticality",
-        "external attack surface",
-        "easm",
-        "internet-facing asset",
-        "unknown asset",
-    ),
-
-    "cmdb_sync": (
-        "cmdb sync",
-        "cmdb",
-        "asset sync",
-        "servicenow cmdb",
-        "cmdb connector",
-        "sync to cmdb",
-        "asset import",
-        "asset export",
-    ),
-
-    # -------------------------------------------------
-    # Vulnerability management
-    # -------------------------------------------------
-    "vmdr": (
+    "vulnerability_management_detection_response": (
         "vmdr",
         "vulnerability management",
         "vulnerability detection",
         "detection and response",
-        "qualys detection",
-        "qid",
-        "knowledgebase qid",
-        "potential vulnerability",
-        "confirmed vulnerability",
-        "vuln finding",
-        "finding",
-        "host detection",
-        "reopen vulnerability",
-        "fixed vulnerability",
-        "ignored qid",
-        "false positive",
         "risk prioritization",
-        "trurisk",
-        "vulnerability score",
-        "severity",
-        "exploitability",
-        "threat intel",
+        "continuous monitoring",
+        "vulnerability finding",
+        "exposure management",
+        "threat protection",
     ),
-
     "patch_management": (
         "patch management",
-        "pm",
-        "deploy patch",
-        "patch deploy",
         "patch deployment",
-        "patch job",
-        "patch window",
-        "patch catalog",
-        "patch supersedence",
-        "missing patch",
-        "patch available",
-        "patch failed",
-        "patch rollback",
-        "patch reboot",
-        "patch schedule",
         "patching",
-        "kb article patch",
-        "windows update patch",
-        "linux patch",
-        "mac patch",
+        "missing patch",
+        "patch schedule",
+        "patch job",
+        "patch rollout",
+        "third-party patch",
+        "operating system patch",
     ),
-
-    "mitigation": (
-        "mitigation",
-        "mtg",
-        "mitigate",
-        "compensating control",
-        "exception instead of patch",
-        "temporary mitigation",
-        "mitigation control",
-        "zero-day mitigation",
-        "isolate instead of patch",
+    "cybersecurity_asset_management": (
+        "csam",
+        "cybersecurity asset management",
+        "asset inventory",
+        "asset discovery",
+        "asset visibility",
+        "asset lifecycle",
+        "unknown asset",
+        "hardware inventory",
+        "software inventory",
+        "cmdb sync",
     ),
-
     "policy_compliance": (
         "policy compliance",
-        "pc",
-        "compliance policy",
-        "control",
-        "control result",
-        "compliance scan",
-        "compliance evaluation",
-        "cis benchmark",
-        "stig",
-        "policy audit",
+        "configuration compliance",
+        "security compliance",
         "compliance posture",
-        "evidence collection",
-        "control passed",
-        "control failed",
+        "compliance assessment",
+        "benchmark compliance",
+        "cis benchmark",
+        "regulatory compliance",
+        "policy audit",
     ),
-
-    "security_configuration_assessment": (
-        "security configuration assessment",
-        "sca",
-        "configuration assessment",
-        "cis configuration",
-        "benchmark assessment",
-        "hardening check",
-        "secure configuration",
-        "misconfiguration",
-        "config finding",
-        "config control",
-    ),
-
-    "certview": (
-        "certificate view",
-        "certview",
-        "certificate inventory",
-        "certificate assessment",
-        "tls certificate",
-        "ssl certificate",
-        "expiring certificate",
-        "weak certificate",
-        "certificate discovery",
-        "certificate chain",
-    ),
-
-    # -------------------------------------------------
-    # Application security
-    # -------------------------------------------------
-    "was": (
+    "web_application_scanning": (
         "was",
         "web application scanning",
-        "web app scanning",
-        "web application scan",
-        "web scan",
-        "dast",
+        "web app scan",
+        "web application security",
+        "dynamic application security",
+        "owasp",
+        "authenticated scan",
         "web vulnerability",
-        "crawl issue",
-        "authentication for web app",
-        "form submission",
-        "web app record",
-        "webapp",
-        "scan web application",
+        "api security testing",
     ),
-
-    "waf_authentication_webapp": (
-        "selenium script",
-        "web app auth",
-        "was auth",
-        "authentication record for was",
-        "login sequence",
-        "web app login",
-        "multi-step login",
-        "csrf token",
-        "session handling",
+    "totalcloud": (
+        "totalcloud",
+        "cloud security posture",
+        "cloud workload protection",
+        "cloud detection and response",
+        "container security",
+        "kubernetes security",
+        "iac security",
+        "cloud misconfiguration",
+        "saas security posture",
+        "cnapp",
     ),
-
-    "malware_detection": (
-        "web malware detection",
-        "malware detection",
-        "website malware",
-        "infected website",
-        "malicious javascript",
-        "defacement monitoring",
-    ),
-
-    "api_security": (
-        "api security",
-        "api scan",
-        "swagger",
-        "openapi",
-        "postman collection scan",
-        "api inventory",
-        "api endpoint discovery",
-        "api misconfiguration",
-    ),
-
-    # -------------------------------------------------
-    # Endpoint security / response
-    # -------------------------------------------------
-    "edr": (
+    "multi_vector_edr": (
         "edr",
+        "multi-vector edr",
         "endpoint detection and response",
-        "endpoint event",
-        "suspicious process",
-        "telemetry",
-        "hunt query",
-        "process tree",
-        "incident",
-        "response action",
-        "isolate host",
-        "kill process",
-        "ioc",
-        "ioa",
-        "malware event",
+        "endpoint threat detection",
+        "behavioral detection",
+        "endpoint telemetry",
+        "threat hunting",
+        "host isolation",
+        "endpoint incident",
     ),
-
-    "fim": (
-        "file integrity monitoring",
+    "file_integrity_monitoring": (
         "fim",
-        "file change",
-        "registry change",
-        "critical file changed",
+        "file integrity monitoring",
+        "file change monitoring",
+        "configuration change monitoring",
         "unauthorized change",
         "baseline drift",
-        "monitored file",
+        "registry monitoring",
+        "integrity alert",
     ),
-
-    "car": (
-        "custom assessment and remediation",
+    "security_assessment_questionnaire": (
+        "saq",
+        "security assessment questionnaire",
+        "third-party risk",
+        "vendor risk",
+        "supplier risk",
+        "security questionnaire",
+        "vendor assessment",
+        "supply chain risk",
+    ),
+    "custom_assessment_and_remediation": (
         "car",
+        "custom assessment and remediation",
+        "custom assessment",
+        "custom remediation",
+        "custom detection",
         "custom script",
         "remediation script",
-        "assessment script",
-        "script execution",
-        "custom control",
-    ),
-
-    # -------------------------------------------------
-    # Cloud / container / workload security
-    # -------------------------------------------------
-    "container_security": (
-        "container security",
-        "container scan",
-        "image scan",
-        "container image",
-        "registry scan",
-        "docker image",
-        "kubernetes scan",
-        "k8s scan",
-        "container vulnerability",
-        "runtime container",
-        "registry connector",
-        "ecr",
-        "acr",
-        "gcr",
-        "harbor",
-    ),
-
-    "cloud_security_totalcloud": (
-        "totalcloud",
-        "cloud security",
-        "cloud posture",
-        "cloud workload",
-        "cloud misconfiguration",
-        "cspm",
-        "cloudview",
-        "aws connector",
-        "azure connector",
-        "gcp connector",
-        "cloud connector",
-        "cloud account onboarding",
-        "cloud detection",
-        "iac scan",
-        "terraform scan",
-        "drift",
-        "cloud compliance",
-    ),
-
-    "saas_security": (
-        "saas security",
-        "saas detection and response",
-        "sdr",
-        "saas app connector",
-        "microsoft 365 security",
-        "google workspace security",
-        "oauth app risk",
-        "saas posture",
-    ),
-
-    "vmdr_ot": (
-        "ot",
-        "vmdr ot",
-        "operational technology",
-        "industrial asset",
-        "ics asset",
-        "scada asset",
-        "ot discovery",
-        "ot vulnerability",
-    ),
-
-    "mobile": (
-        "mobile",
-        "mobile device",
-        "vmdr mobile",
-        "android finding",
-        "ios finding",
-        "mobile posture",
-    ),
-
-    # -------------------------------------------------
-    # Scanning operations
-    # -------------------------------------------------
-    "vm_scanning": (
-        "scan",
-        "scheduled scan",
-        "scan schedule",
-        "scan job",
-        "scan option profile",
-        "option profile",
-        "scan profile",
-        "scan cancelled",
-        "scan paused",
-        "scan stuck",
-        "scan failed",
-        "scan timeout",
-        "scan performance",
-        "scan duration",
-        "scan status",
-        "host not scanned",
-        "scan results delayed",
-        "scan processing",
-        "map scan",
-        "discovery scan",
-    ),
-
-    "authentication_records": (
-        "authentication",
-        "auth",
-        "auth record",
-        "authentication record",
-        "credential",
-        "credentials",
-        "login failed",
-        "scan authentication failed",
-        "unix auth",
-        "windows auth",
-        "database auth",
-        "oracle auth",
-        "sql server auth",
-        "ssh auth",
-        "winrm",
-        "wmi",
-        "sudo",
-        "privileged auth",
-        "vault auth",
-        "secret rotation",
-    ),
-
-    # -------------------------------------------------
-    # Reporting / dashboards / search / tagging
-    # -------------------------------------------------
-    "reporting_dashboard": (
-        "report",
-        "dashboard",
-        "widget",
-        "unified dashboard",
-        "ud",
-        "export",
-        "csv export",
-        "pdf export",
-        "scheduled report",
-        "report template",
-        "report share",
-        "report empty",
-        "dashboard filter",
-        "dashboard data mismatch",
-    ),
-
-    "tagging": (
-        "tag",
-        "tags",
-        "tagging",
-        "dynamic tag",
-        "static tag",
-        "tag rule",
-        "rule engine",
-        "auto-tagging",
-        "business unit tag",
-        "asset tag",
-        "tag not applied",
-        "tag evaluation",
-    ),
-
-    "qql_search": (
-        "qql",
-        "qualys query language",
-        "search token",
-        "search syntax",
-        "asset search",
-        "query filter",
-        "saved search",
-    ),
-
-    # -------------------------------------------------
-    # Integrations / workflows
-    # -------------------------------------------------
-    "integration_itsm_siem": (
-        "integration",
-        "connector",
-        "servicenow",
-        "jira",
-        "splunk",
-        "siem",
-        "webhook",
-        "ticket",
-        "ticketing",
-        "remediation ticket",
-        "event forwarding",
-        "syslog",
-        "push connector",
-        "pull connector",
-        "workflow integration",
-    ),
-
-    "notification_workflow": (
-        "notification",
-        "alert",
-        "email notification",
-        "digest",
-        "workflow",
-        "trigger",
-        "rule based notification",
-        "event notification",
+        "automated remediation",
     ),
 }
 
 ISSUE_FAMILY_LABELS = {
-    "scan": "a Qualys scan issue",
-    "vmdr": "a Qualys VMDR or detection issue",
-    "cloud_agent": "a Qualys Cloud Agent issue",
-    "asset_visibility": "a Qualys asset visibility issue",
-    "authentication": "a Qualys authentication record issue",
-    "integration": "a Qualys integration issue",
-    "api": "a Qualys API issue",
-    "tagging": "a Qualys tagging issue",
-    "reporting": "a Qualys reporting issue",
+    "vulnerability_management_detection_response": "a Qualys Vulnerability Management, Detection & Response issue",
+    "patch_management": "a Qualys Patch Management issue",
+    "cybersecurity_asset_management": "a Qualys Cybersecurity Asset Management issue",
+    "policy_compliance": "a Qualys Policy Compliance issue",
+    "web_application_scanning": "a Qualys Web Application Scanning issue",
+    "totalcloud": "a Qualys TotalCloud issue",
+    "multi_vector_edr": "a Qualys Multi-Vector EDR issue",
+    "file_integrity_monitoring": "a Qualys File Integrity Monitoring issue",
+    "security_assessment_questionnaire": "a Qualys Security Assessment Questionnaire issue",
+    "custom_assessment_and_remediation": "a Qualys Custom Assessment and Remediation issue",
     "general": "a Qualys support issue",
 }
 INTEGRATION_TARGETS = ("servicenow", "jira", "splunk", "sumo logic", "qradar", "siem", "snowflake", "slack")
@@ -747,19 +295,29 @@ FRUSTRATION_PATTERNS = {
 }
 QUALYS_DOMAIN_HINTS = (
     "qualys",
-    "scan",
-    "scanner",
     "cloud agent",
     "vmdr",
     "vulnerability",
-    "qid",
-    "detection",
+    "patch management",
+    "patching",
+    "csam",
     "asset inventory",
-    "authentication",
-    "credential",
-    "tag",
-    "report",
-    "dashboard",
+    "policy compliance",
+    "compliance",
+    "was",
+    "web application",
+    "totalcloud",
+    "cloud posture",
+    "container security",
+    "edr",
+    "endpoint detection",
+    "fim",
+    "file integrity",
+    "saq",
+    "security questionnaire",
+    "third-party risk",
+    "car",
+    "custom assessment",
     "servicenow",
     "jira",
     "splunk",
@@ -814,15 +372,16 @@ SEARCH_FIRST_PATTERNS = (
     "version",
 )
 SEARCH_COMPONENT_HINTS: dict[str, tuple[str, ...]] = {
-    "scan": ("scanner appliance", "scan profile", "option profile", "authentication"),
-    "vmdr": ("detection", "qid", "knowledgebase", "finding"),
-    "cloud_agent": ("cloud agent", "agent check-in", "agent activation", "manifest", "proxy"),
-    "asset_visibility": ("asset inventory", "sync", "asset tagging"),
-    "authentication": ("authentication record", "credential", "vault", "login"),
-    "integration": ("connector", "integration", "job", "mapping", "webhook"),
-    "api": ("api", "endpoint", "token", "header", "payload"),
-    "tagging": ("tag", "dynamic tag", "rule engine"),
-    "reporting": ("report", "dashboard", "widget", "export"),
+    "vulnerability_management_detection_response": ("vulnerability finding", "risk prioritization", "continuous monitoring", "threat protection"),
+    "patch_management": ("patch deployment", "patch schedule", "missing patch", "patch rollout"),
+    "cybersecurity_asset_management": ("asset inventory", "asset discovery", "asset visibility", "cmdb sync"),
+    "policy_compliance": ("compliance posture", "benchmark compliance", "policy audit", "regulatory compliance"),
+    "web_application_scanning": ("web application security", "authenticated scan", "api security testing", "owasp"),
+    "totalcloud": ("cloud security posture", "cloud workload protection", "container security", "iac security"),
+    "multi_vector_edr": ("endpoint telemetry", "endpoint threat detection", "threat hunting", "host isolation"),
+    "file_integrity_monitoring": ("file change monitoring", "registry monitoring", "baseline drift", "integrity alert"),
+    "security_assessment_questionnaire": ("third-party risk", "vendor risk", "security questionnaire", "vendor assessment"),
+    "custom_assessment_and_remediation": ("custom assessment", "custom remediation", "custom detection", "automated remediation"),
 }
 SEARCH_SYMPTOM_PATTERNS = (
     "not checking in",
@@ -1053,6 +612,10 @@ class SearchRequest(BaseModel):
     product_area: str | None = None
 
 
+class RealtimeCallRequest(BaseModel):
+    sdp: str = Field(min_length=1)
+
+
 def _build_system_message() -> str:
     sections = [
         f"You are {ASSISTANT_NAME}, the support assistant for {SUPPORT_PRODUCT}.",
@@ -1072,8 +635,8 @@ def _build_system_message() -> str:
             "'This sounds like a VMDR detection issue' or 'This sounds more like a ServiceNow connector issue'."
         ),
         (
-            "You help with Qualys support topics such as scans, VMDR, Cloud Agent, scanner appliances, tags, asset inventory, "
-            "detections, authentication records, APIs, connectors, and integrations. "
+            "You help with Qualys support topics such as VMDR, Patch Management, CSAM, Policy Compliance, WAS, TotalCloud, "
+            "Multi-Vector EDR, FIM, SAQ, CAR, and directly related APIs, connectors, and integrations. "
             "If the caller describes something informally, rephrase it into proper Qualys terminology before troubleshooting."
         ),
         (
@@ -1154,9 +717,9 @@ SYSTEM_MESSAGE = _build_system_message()
 
 def _build_transcription_prompt() -> str:
     return (
-        "Desktop voice support session about Qualys. Expect terms like Qualys, VMDR, Cloud Agent, Asset Inventory, "
-        "scanner appliance, authentication record, tags, detections, QID, ServiceNow, Jira, Splunk, SIEM, API, connector, "
-        "remediation, and common Indian English support phrasing."
+        "Desktop voice support session about Qualys. Expect terms like Qualys, VMDR, Patch Management, CSAM, "
+        "Policy Compliance, WAS, TotalCloud, EDR, FIM, SAQ, CAR, ServiceNow, Jira, Splunk, SIEM, API, connector, "
+        "vulnerability, patching, compliance, cloud posture, asset inventory, and common Indian English support phrasing."
     )
 
 
@@ -1224,7 +787,7 @@ def _build_realtime_tools() -> list[dict[str, Any]]:
                         },
                         "product_area": {
                             "type": "string",
-                            "description": "Optional Qualys area such as VMDR, Cloud Agent, scanners, API, tags, auth records, or integrations.",
+                            "description": "Optional Qualys area such as VMDR, Patch Management, CSAM, Policy Compliance, WAS, TotalCloud, EDR, FIM, SAQ, or CAR.",
                         },
                     },
                     "required": ["query"],
@@ -1265,6 +828,68 @@ def _build_browser_session_config() -> dict[str, Any]:
         "tool_choice": "auto",
     }
     return session
+
+
+def _encode_multipart_form_data(fields: dict[str, str]) -> tuple[str, bytes]:
+    boundary = f"----QualysRealtimeBoundary{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                value.encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return f"multipart/form-data; boundary={boundary}", b"".join(chunks)
+
+
+def _create_realtime_call_sdp(offer_sdp: str) -> str:
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is missing.")
+
+    content_type, request_body = _encode_multipart_form_data(
+        {
+            "sdp": offer_sdp,
+            "session": _json_dumps(_build_browser_session_config()),
+        }
+    )
+    request = urllib_request.Request(
+        f"{OPENAI_API_BASE}/realtime/calls",
+        data=request_body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": content_type,
+            "Accept": "application/json, application/sdp, text/plain, */*",
+        },
+    )
+
+    try:
+        with urllib_request.urlopen(request, timeout=30) as response:
+            response_body = response.read()
+            response_content_type = response.headers.get("Content-Type", "")
+    except urllib_error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "ignore").strip()
+        raise RuntimeError(detail or f"OpenAI create call failed with {exc.code}") from exc
+    except urllib_error.URLError as exc:
+        raise RuntimeError(f"OpenAI create call failed: {exc.reason}") from exc
+
+    if "application/json" in response_content_type:
+        try:
+            payload = json.loads(response_body.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("OpenAI returned invalid JSON while creating the realtime call.") from exc
+        answer = payload.get("answer")
+        sdp = payload.get("sdp") or (answer.get("sdp") if isinstance(answer, dict) else answer) or ""
+    else:
+        sdp = response_body.decode("utf-8", "ignore")
+
+    if not sdp.strip():
+        raise RuntimeError("OpenAI returned an empty SDP answer.")
+    return sdp
 
 
 def _route_issue_family(text: str) -> tuple[str, str]:
@@ -1974,7 +1599,7 @@ if STATIC_DIR.exists():
 @app.on_event("startup")
 async def _log_startup_configuration() -> None:
     logger.info(
-        "Startup config version=%s model=%s voice=%s public_url=%s knowledge_backend=%s/%s frontend=webrtc-browser-direct",
+        "Startup config version=%s model=%s voice=%s public_url=%s knowledge_backend=%s/%s frontend=webrtc-browser-backend-signaled",
         APP_FLOW_VERSION,
         OPENAI_MODEL,
         VOICE,
@@ -2004,7 +1629,7 @@ async def health():
     return {
         "ok": True,
         "app_flow_version": APP_FLOW_VERSION,
-        "frontend_mode": "browser-webrtc-direct-openai",
+        "frontend_mode": "browser-webrtc-backend-signaled",
         "public_url": PUBLIC_URL,
         "model": OPENAI_MODEL,
         "voice": VOICE,
@@ -2017,7 +1642,7 @@ async def health():
         "knowledge_cache_ttl_s": KNOWLEDGE_CACHE_TTL_S,
         "session_state_ttl_s": SESSION_STATE_TTL_S,
         "demo_ready": _demo_ready(_build_demo_readiness_checks()),
-        "openai_key_exposed_to_browser": bool(OPENAI_API_KEY),
+        "openai_key_exposed_to_browser": False,
     }
 
 
@@ -2027,10 +1652,8 @@ async def realtime_config():
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is missing.")
     return {
         "app_flow_version": APP_FLOW_VERSION,
-        "mode": "browser-webrtc-direct-openai",
+        "mode": "browser-webrtc-backend-signaled",
         "public_url": PUBLIC_URL,
-        "openai_api_base": OPENAI_API_BASE,
-        "openai_api_key": OPENAI_API_KEY,
         "model": OPENAI_MODEL,
         "voice": VOICE,
         "assistant_name": ASSISTANT_NAME,
@@ -2039,10 +1662,18 @@ async def realtime_config():
         "knowledge_backend_enabled": _knowledge_backend_enabled(),
         "ai_speaks_first": AI_SPEAKS_FIRST,
         "initial_greeting": _build_initial_greeting_line(),
-        "developer_note": "This demo exposes a long-lived API key to the browser. Keep it development-only.",
         "session": _build_browser_session_config(),
         "tool_names": [tool["name"] for tool in _build_realtime_tools()],
     }
+
+
+@app.post("/api/realtime-call", response_class=PlainTextResponse)
+async def realtime_call(request: RealtimeCallRequest):
+    try:
+        answer_sdp = await __import__("asyncio").to_thread(_create_realtime_call_sdp, request.sdp)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return PlainTextResponse(answer_sdp)
 
 
 @app.post("/api/session/reset", response_class=JSONResponse)
