@@ -13,6 +13,8 @@ const state = {
   interruptTimer: null,
   processedCallIds: new Set(),
   processedTranscriptItemIds: new Set(),
+  activeResponseId: null,
+  pendingResponseCreate: false,
 };
 
 const refs = {
@@ -85,6 +87,19 @@ function sendRealtimeEvent(event) {
     return;
   }
   state.dataChannel.send(JSON.stringify(event));
+}
+
+function flushPendingResponseCreate() {
+  if (!state.pendingResponseCreate || state.assistantSpeaking) {
+    return;
+  }
+  state.pendingResponseCreate = false;
+  sendRealtimeEvent({
+    type: "response.create",
+    response: {
+      output_modalities: ["audio"],
+    },
+  });
 }
 
 function clearInterruptTimer() {
@@ -208,9 +223,9 @@ function sendSystemMessage(text) {
 
 async function autoGroundAndRespond(transcript) {
   if (state.assistantSpeaking) {
+    // Cancel and wait for response.done before creating a new response.
+    state.pendingResponseCreate = true;
     sendRealtimeEvent({ type: "response.cancel" });
-    state.assistantSpeaking = false;
-    clearInterruptTimer();
   }
 
   const contextPayload = await syncTranscriptContext(transcript);
@@ -250,12 +265,8 @@ async function autoGroundAndRespond(transcript) {
     }
   }
 
-  sendRealtimeEvent({
-    type: "response.create",
-    response: {
-      output_modalities: ["audio"],
-    },
-  });
+  state.pendingResponseCreate = true;
+  flushPendingResponseCreate();
 }
 
 async function invokeTool(name, args) {
@@ -344,13 +355,16 @@ async function handleRealtimeEvent(event) {
       break;
     case "response.created":
       state.assistantSpeaking = true;
+      state.activeResponseId = String(event.response?.id || "") || null;
       setActivity("assistant");
       break;
     case "response.done":
       state.assistantSpeaking = false;
+      state.activeResponseId = null;
       clearInterruptTimer();
       setActivity("live");
       await handleFunctionCalls(event);
+      flushPendingResponseCreate();
       break;
     case "conversation.item.input_audio_transcription.completed": {
       const transcript = String(event.transcript || "").trim();
@@ -451,6 +465,8 @@ async function disconnect({ resetSession = true, reason = "ended", message = "" 
   state.sessionId = null;
   state.isConnected = false;
   state.assistantSpeaking = false;
+  state.activeResponseId = null;
+  state.pendingResponseCreate = false;
   state.processedCallIds.clear();
   state.processedTranscriptItemIds.clear();
   clearInterruptTimer();
