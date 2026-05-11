@@ -1854,13 +1854,20 @@ async def update_transcript(request: TranscriptRequest):
     if route_changed:
         _append_unique(call_state.confirmed_facts, f"Routed issue family: {call_state.routed_issue_label}")
     system_hint = _context_hint_for_state(call_state)
+    search_recommended = any(pattern in request.transcript.lower() for pattern in SEARCH_FIRST_PATTERNS)
+    logger.info(
+        "Transcript update session_id=%s chars=%s search_recommended=%s",
+        request.session_id,
+        len(request.transcript or ""),
+        search_recommended,
+    )
     return {
         "ok": True,
         "route_changed": route_changed,
         "system_hint": system_hint,
         "context": call_state.as_tool_payload(),
         "summary": call_state.summary_text(),
-        "search_recommended": any(pattern in request.transcript.lower() for pattern in SEARCH_FIRST_PATTERNS),
+        "search_recommended": search_recommended,
     }
 
 

@@ -234,9 +234,10 @@ async function autoGroundAndRespond(transcript) {
     sendSystemMessage(systemHint);
   }
 
-  const shouldGround = Boolean(
-    contextPayload?.search_recommended && state.config?.knowledge_backend_enabled
-  );
+  // Ground by default when a knowledge backend is enabled. The transcript heuristic is still
+  // returned by the server, but relying on it can make grounding appear "broken" for common
+  // support utterances that don't include keywords like "error code" or "API".
+  const shouldGround = Boolean(state.config?.knowledge_backend_enabled);
 
   if (shouldGround) {
     try {
