@@ -9,7 +9,10 @@ const state = {
   isConnected: false,
   isConnecting: false,
   isDisconnecting: false,
+  assistantSpeaking: false,
+  interruptTimer: null,
   processedCallIds: new Set(),
+  processedTranscriptItemIds: new Set(),
 };
 
 const refs = {
@@ -84,6 +87,29 @@ function sendRealtimeEvent(event) {
   state.dataChannel.send(JSON.stringify(event));
 }
 
+function clearInterruptTimer() {
+  if (!state.interruptTimer) {
+    return;
+  }
+  window.clearTimeout(state.interruptTimer);
+  state.interruptTimer = null;
+}
+
+function scheduleAssistantInterrupt() {
+  if (!state.assistantSpeaking || state.interruptTimer) {
+    return;
+  }
+
+  const debounceMs = Number(state.config?.interrupt_debounce_ms ?? 180);
+  state.interruptTimer = window.setTimeout(() => {
+    state.interruptTimer = null;
+    if (!state.assistantSpeaking) {
+      return;
+    }
+    sendRealtimeEvent({ type: "response.cancel" });
+  }, Math.max(0, debounceMs));
+}
+
 function getFunctionCallsFromResponse(event) {
   const output = event?.response?.output;
   if (!Array.isArray(output)) {
@@ -147,11 +173,11 @@ function applyBranding(data) {
 
 async function syncTranscriptContext(transcript) {
   if (!state.sessionId) {
-    return;
+    return null;
   }
 
   try {
-    await fetchJson(routes.transcript, {
+    return await fetchJson(routes.transcript, {
       method: "POST",
       body: JSON.stringify({
         session_id: state.sessionId,
@@ -160,7 +186,76 @@ async function syncTranscriptContext(transcript) {
     });
   } catch (error) {
     logEvent(`Transcript sync failed: ${trimText(error.message || String(error), 120)}`);
+    return null;
   }
+}
+
+function sendSystemMessage(text) {
+  const message = String(text || "").trim();
+  if (!message) {
+    return;
+  }
+
+  sendRealtimeEvent({
+    type: "conversation.item.create",
+    item: {
+      type: "message",
+      role: "system",
+      content: [{ type: "input_text", text: message }],
+    },
+  });
+}
+
+async function autoGroundAndRespond(transcript) {
+  if (state.assistantSpeaking) {
+    sendRealtimeEvent({ type: "response.cancel" });
+    state.assistantSpeaking = false;
+    clearInterruptTimer();
+  }
+
+  const contextPayload = await syncTranscriptContext(transcript);
+  const systemHint = String(contextPayload?.system_hint || "").trim();
+  if (systemHint) {
+    sendSystemMessage(systemHint);
+  }
+
+  const shouldGround = Boolean(
+    contextPayload?.search_recommended && state.config?.knowledge_backend_enabled
+  );
+
+  if (shouldGround) {
+    try {
+      const grounding = await fetchJson(routes.search, {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: state.sessionId,
+          query: transcript,
+          product_area: "",
+        }),
+      });
+
+      const answerContext = String(grounding?.answer_context || "").trim();
+      const bestTitle = String(grounding?.best_result?.title || "").trim();
+      const bestConfidence = Number(grounding?.best_confidence ?? 0);
+      const header = bestTitle
+        ? `Grounding: SearchUnify top hit "${bestTitle}" (confidence ${bestConfidence}).`
+        : "Grounding: SearchUnify results.";
+      const groundingText = answerContext ? `${header}\n${answerContext}` : header;
+
+      sendSystemMessage(
+        `${groundingText}\nUse this grounding when answering. Do not call the search tool again unless the user asks for more details.`
+      );
+    } catch (error) {
+      logEvent(`Auto-grounding failed: ${trimText(error.message || String(error), 120)}`);
+    }
+  }
+
+  sendRealtimeEvent({
+    type: "response.create",
+    response: {
+      output_modalities: ["audio"],
+    },
+  });
 }
 
 async function invokeTool(name, args) {
@@ -188,7 +283,7 @@ async function invokeTool(name, args) {
       });
     }
 
-    if (name === "search_qualys_support_knowledge") {
+    if (name === "search_bluebeam_support_knowledge") {
       return await fetchJson(routes.search, {
         method: "POST",
         body: JSON.stringify({
@@ -241,26 +336,45 @@ async function handleRealtimeEvent(event) {
   switch (event.type) {
     case "input_audio_buffer.speech_started":
       setActivity("user");
+      scheduleAssistantInterrupt();
       break;
     case "input_audio_buffer.speech_stopped":
+      clearInterruptTimer();
       setActivity("live");
       break;
     case "response.created":
+      state.assistantSpeaking = true;
       setActivity("assistant");
       break;
     case "response.done":
+      state.assistantSpeaking = false;
+      clearInterruptTimer();
       setActivity("live");
       await handleFunctionCalls(event);
       break;
     case "conversation.item.input_audio_transcription.completed": {
       const transcript = String(event.transcript || "").trim();
       if (transcript) {
-        await syncTranscriptContext(transcript);
+        const itemId = String(event.item_id || "");
+        if (itemId && state.processedTranscriptItemIds.has(itemId)) {
+          break;
+        }
+        if (itemId) {
+          state.processedTranscriptItemIds.add(itemId);
+        }
+        await autoGroundAndRespond(transcript);
       }
       break;
     }
     case "error": {
       const message = trimText(event.error?.message || "Unknown Realtime error", 140);
+      if (message.toLowerCase().includes("response.cancel")) {
+        logEvent(`Ignored interrupt race: ${message}`);
+        state.assistantSpeaking = false;
+        clearInterruptTimer();
+        setActivity("live");
+        break;
+      }
       logEvent(`Realtime error: ${message}`);
       await disconnect({
         resetSession: false,
@@ -336,7 +450,10 @@ async function disconnect({ resetSession = true, reason = "ended", message = "" 
   state.remoteStream = null;
   state.sessionId = null;
   state.isConnected = false;
+  state.assistantSpeaking = false;
   state.processedCallIds.clear();
+  state.processedTranscriptItemIds.clear();
+  clearInterruptTimer();
 
   try {
     dataChannel?.close();
@@ -386,11 +503,13 @@ async function connect() {
     applyBranding(state.config);
 
     state.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
+      audio: state.config.mic_audio_constraints || {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
         channelCount: 1,
+        sampleRate: { ideal: 48000 },
+        sampleSize: { ideal: 16 },
       },
     });
 
@@ -443,11 +562,6 @@ async function connect() {
       setUiState("live");
       setActivity("live");
       setHint("Voice session is live.", "live");
-
-      sendRealtimeEvent({
-        type: "session.update",
-        session: state.config.session,
-      });
 
       if (state.config.ai_speaks_first) {
         sendRealtimeEvent({

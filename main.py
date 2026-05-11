@@ -1,4 +1,5 @@
 import dataclasses
+import html
 import json
 import logging
 import os
@@ -107,16 +108,20 @@ OPENAI_MODEL = (os.getenv("OPENAI_MODEL") or "gpt-realtime").strip()
 OPENAI_API_BASE = (os.getenv("OPENAI_API_BASE") or "https://api.openai.com/v1").strip().rstrip("/")
 
 ASSISTANT_NAME = (os.getenv("ASSISTANT_NAME") or "Aira").strip()
-SUPPORT_PRODUCT = (os.getenv("SUPPORT_PRODUCT") or "Qualys").strip()
+SUPPORT_PRODUCT = (os.getenv("SUPPORT_PRODUCT") or "Bluebeam").strip()
+SUPPORT_CLIENT_URL = (os.getenv("SUPPORT_CLIENT_URL") or "https://www.bluebeam.com/").strip()
 VOICE = (os.getenv("VOICE") or "shimmer").strip()
 AI_SPEAKS_FIRST = _env_bool("AI_SPEAKS_FIRST", False)
 
 TRANSCRIPTION_MODEL = (os.getenv("TRANSCRIPTION_MODEL") or "gpt-4o-mini-transcribe").strip()
 TRANSCRIPTION_LANGUAGE = (os.getenv("TRANSCRIPTION_LANGUAGE") or "en").strip()
 TRANSCRIPTION_NOISE_REDUCTION = (os.getenv("TRANSCRIPTION_NOISE_REDUCTION") or "near_field").strip()
-SERVER_VAD_THRESHOLD = _env_float("SERVER_VAD_THRESHOLD", 0.62)
-SERVER_VAD_PREFIX_PADDING_MS = _env_int("SERVER_VAD_PREFIX_PADDING_MS", 300)
-SERVER_VAD_SILENCE_DURATION_MS = _env_int("SERVER_VAD_SILENCE_DURATION_MS", 450)
+REALTIME_TURN_DETECTION_TYPE = (os.getenv("REALTIME_TURN_DETECTION_TYPE") or "semantic_vad").strip().lower()
+SEMANTIC_VAD_EAGERNESS = (os.getenv("SEMANTIC_VAD_EAGERNESS") or "low").strip().lower()
+SERVER_VAD_THRESHOLD = _env_float("SERVER_VAD_THRESHOLD", 0.72)
+SERVER_VAD_PREFIX_PADDING_MS = _env_int("SERVER_VAD_PREFIX_PADDING_MS", 500)
+SERVER_VAD_SILENCE_DURATION_MS = _env_int("SERVER_VAD_SILENCE_DURATION_MS", 650)
+INTERRUPT_DEBOUNCE_MS = _env_int("INTERRUPT_DEBOUNCE_MS", 180)
 
 CUSTOM_SYSTEM_MESSAGE = (os.getenv("SYSTEM_MESSAGE") or "").strip()
 
@@ -145,183 +150,176 @@ SEARCHUNIFY_SORTBY = (os.getenv("SEARCHUNIFY_SORTBY") or "_score").strip()
 SEARCHUNIFY_ORDER_BY = (os.getenv("SEARCHUNIFY_ORDER_BY") or "desc").strip()
 
 SESSION_STATE_TTL_S = _env_int("SESSION_STATE_TTL_S", 7200)
-DEMO_LOOKUP_QUERY = (os.getenv("DEMO_LOOKUP_QUERY") or "qualys vulnerability findings are not updating").strip()
-DEMO_LOOKUP_PRODUCT_AREA = (os.getenv("DEMO_LOOKUP_PRODUCT_AREA") or "vulnerability management detection response").strip()
+DEMO_LOOKUP_QUERY = (os.getenv("DEMO_LOOKUP_QUERY") or "Bluebeam Studio Session markups are not syncing").strip()
+DEMO_LOOKUP_PRODUCT_AREA = (os.getenv("DEMO_LOOKUP_PRODUCT_AREA") or "studio collaboration").strip()
 
 SUPPORTED_REALTIME_VOICES = ("alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")
 SEARCHUNIFY_HIGHLIGHT_START = "___su-highlight-start___"
 SEARCHUNIFY_HIGHLIGHT_END = "___su-highlight-end___"
 
 DEFAULT_DYNAMIC_OPENERS = [
-    "Is VMDR, patching, or remediation not behaving the way you expect?",
-    "Are asset inventory or compliance results not lining up correctly?",
-    "Is a web app, endpoint, or cloud security workflow failing in Qualys?",
-    "Is a vendor risk, file integrity, or custom remediation flow giving you trouble?",
+    "Is Revu, Studio, or Bluebeam on web and mobile not behaving the way you expect?",
+    "Are markups, measurements, or drawing documents not lining up correctly?",
+    "Is a Studio Session, Project, or Bluebeam ID sign-in flow giving you trouble?",
+    "Are installation, licensing, plugins, or integrations blocking your team?",
 ]
-QUALYS_DYNAMIC_OPENERS = _env_list("QUALYS_DYNAMIC_OPENERS", DEFAULT_DYNAMIC_OPENERS)
+BLUEBEAM_DYNAMIC_OPENERS = _env_list("BLUEBEAM_DYNAMIC_OPENERS", DEFAULT_DYNAMIC_OPENERS)
 
 # Product families are intentionally compact and domain-specific.
-# Keep these aligned to the top-level Qualys product areas used for routing.
+# Keep these aligned to the top-level Bluebeam product areas used for routing.
 
 ISSUE_FAMILY_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "vulnerability_management_detection_response": (
-        "vmdr",
-        "vulnerability management",
-        "vulnerability detection",
-        "detection and response",
-        "risk prioritization",
-        "continuous monitoring",
-        "vulnerability finding",
-        "exposure management",
-        "threat protection",
+    "revu_pdf_markup": (
+        "revu",
+        "pdf markup",
+        "markup",
+        "tool chest",
+        "profiles",
+        "properties panel",
+        "layers",
+        "flatten",
+        "ocr",
+        "forms",
+        "batch processing",
     ),
-    "patch_management": (
-        "patch management",
-        "patch deployment",
-        "patching",
-        "missing patch",
-        "patch schedule",
-        "patch job",
-        "patch rollout",
-        "third-party patch",
-        "operating system patch",
+    "studio_collaboration": (
+        "studio",
+        "studio session",
+        "studio sessions",
+        "studio project",
+        "studio projects",
+        "session markups",
+        "real-time collaboration",
+        "invite",
+        "permissions",
+        "checkout",
+        "check out",
+        "sync",
     ),
-    "cybersecurity_asset_management": (
-        "csam",
-        "cybersecurity asset management",
-        "asset inventory",
-        "asset discovery",
-        "asset visibility",
-        "asset lifecycle",
-        "unknown asset",
-        "hardware inventory",
-        "software inventory",
-        "cmdb sync",
+    "bluebeam_web_mobile": (
+        "bluebeam on web",
+        "bluebeam on mobile",
+        "bluebeam cloud",
+        "web and mobile",
+        "browser",
+        "mobile app",
+        "ios",
+        "ipad",
+        "android",
+        "field",
+        "my workspace",
     ),
-    "policy_compliance": (
-        "policy compliance",
-        "configuration compliance",
-        "security compliance",
-        "compliance posture",
-        "compliance assessment",
-        "benchmark compliance",
-        "cis benchmark",
-        "regulatory compliance",
-        "policy audit",
+    "subscription_licensing": (
+        "subscription",
+        "license",
+        "licensing",
+        "bluebeam id",
+        "bbid",
+        "sign in",
+        "login",
+        "account",
+        "plans",
+        "basics",
+        "core",
+        "complete",
+        "max",
+        "activation",
+        "registration",
     ),
-    "web_application_scanning": (
-        "was",
-        "web application scanning",
-        "web app scan",
-        "web application security",
-        "dynamic application security",
-        "owasp",
-        "authenticated scan",
-        "web vulnerability",
-        "api security testing",
+    "installation_updates": (
+        "install",
+        "installation",
+        "download",
+        "update",
+        "upgrade",
+        "deployment",
+        "revu 21",
+        "revu 20",
+        "compatibility",
+        "end of life",
+        "eol",
     ),
-    "totalcloud": (
-        "totalcloud",
-        "cloud security posture",
-        "cloud workload protection",
-        "cloud detection and response",
-        "container security",
-        "kubernetes security",
-        "iac security",
-        "cloud misconfiguration",
-        "saas security posture",
-        "cnapp",
+    "measurements_takeoffs": (
+        "measurement",
+        "measurements",
+        "takeoff",
+        "takeoffs",
+        "calibration",
+        "scale",
+        "length",
+        "area",
+        "count",
+        "spaces",
+        "quantity link",
     ),
-    "multi_vector_edr": (
-        "edr",
-        "multi-vector edr",
-        "endpoint detection and response",
-        "endpoint threat detection",
-        "behavioral detection",
-        "endpoint telemetry",
-        "threat hunting",
-        "host isolation",
-        "endpoint incident",
+    "document_management_sets": (
+        "sets",
+        "batch slip sheet",
+        "slip sheet",
+        "document management",
+        "drawing log",
+        "hyperlinks",
+        "bookmarks",
+        "compare documents",
+        "overlay pages",
+        "page labels",
     ),
-    "file_integrity_monitoring": (
-        "fim",
-        "file integrity monitoring",
-        "file change monitoring",
-        "configuration change monitoring",
-        "unauthorized change",
-        "baseline drift",
-        "registry monitoring",
-        "integrity alert",
-    ),
-    "security_assessment_questionnaire": (
-        "saq",
-        "security assessment questionnaire",
-        "third-party risk",
-        "vendor risk",
-        "supplier risk",
-        "security questionnaire",
-        "vendor assessment",
-        "supply chain risk",
-    ),
-    "custom_assessment_and_remediation": (
-        "car",
-        "custom assessment and remediation",
-        "custom assessment",
-        "custom remediation",
-        "custom detection",
-        "custom script",
-        "remediation script",
-        "automated remediation",
+    "integrations_plugins": (
+        "plugin",
+        "plugins",
+        "integration",
+        "integrations",
+        "revit",
+        "autocad",
+        "navisworks",
+        "sharepoint",
+        "projectwise",
+        "box",
+        "dropbox",
+        "onedrive",
     ),
 }
 
 ISSUE_FAMILY_LABELS = {
-    "vulnerability_management_detection_response": "a Qualys Vulnerability Management, Detection & Response issue",
-    "patch_management": "a Qualys Patch Management issue",
-    "cybersecurity_asset_management": "a Qualys Cybersecurity Asset Management issue",
-    "policy_compliance": "a Qualys Policy Compliance issue",
-    "web_application_scanning": "a Qualys Web Application Scanning issue",
-    "totalcloud": "a Qualys TotalCloud issue",
-    "multi_vector_edr": "a Qualys Multi-Vector EDR issue",
-    "file_integrity_monitoring": "a Qualys File Integrity Monitoring issue",
-    "security_assessment_questionnaire": "a Qualys Security Assessment Questionnaire issue",
-    "custom_assessment_and_remediation": "a Qualys Custom Assessment and Remediation issue",
-    "general": "a Qualys support issue",
+    "revu_pdf_markup": "a Bluebeam Revu PDF markup issue",
+    "studio_collaboration": "a Bluebeam Studio collaboration issue",
+    "bluebeam_web_mobile": "a Bluebeam on web and mobile issue",
+    "subscription_licensing": "a Bluebeam subscription, licensing, or Bluebeam ID issue",
+    "installation_updates": "a Bluebeam Revu installation or update issue",
+    "measurements_takeoffs": "a Bluebeam measurements or takeoffs issue",
+    "document_management_sets": "a Bluebeam document management or Sets issue",
+    "integrations_plugins": "a Bluebeam integrations or plugins issue",
+    "general": "a Bluebeam support issue",
 }
-INTEGRATION_TARGETS = ("servicenow", "jira", "splunk", "sumo logic", "qradar", "siem", "snowflake", "slack")
+INTEGRATION_TARGETS = ("revit", "autocad", "navisworks", "sharepoint", "projectwise", "box", "dropbox", "onedrive")
 FRUSTRATION_PATTERNS = {
     "high": ("not working", "still not working", "nothing works", "fed up", "frustrated", "urgent", "asap"),
     "medium": ("issue", "problem", "stuck", "again", "same error", "failing", "broken"),
 }
-QUALYS_DOMAIN_HINTS = (
-    "qualys",
-    "cloud agent",
-    "vmdr",
-    "vulnerability",
-    "patch management",
-    "patching",
-    "csam",
-    "asset inventory",
-    "policy compliance",
-    "compliance",
-    "was",
-    "web application",
-    "totalcloud",
-    "cloud posture",
-    "container security",
-    "edr",
-    "endpoint detection",
-    "fim",
-    "file integrity",
-    "saq",
-    "security questionnaire",
-    "third-party risk",
-    "car",
-    "custom assessment",
-    "servicenow",
-    "jira",
-    "splunk",
-    "siem",
+BLUEBEAM_DOMAIN_HINTS = (
+    "bluebeam",
+    "revu",
+    "studio",
+    "studio session",
+    "studio project",
+    "bluebeam id",
+    "bbid",
+    "pdf",
+    "markup",
+    "markups",
+    "measurement",
+    "takeoff",
+    "tool chest",
+    "profiles",
+    "sets",
+    "slip sheet",
+    "bluebeam cloud",
+    "web and mobile",
+    "revit",
+    "autocad",
+    "navisworks",
+    "sharepoint",
+    "projectwise",
     "api",
     "connector",
     "integration",
@@ -363,25 +361,25 @@ SEARCH_FIRST_PATTERNS = (
     "header",
     "connector",
     "integration",
-    "servicenow",
-    "jira",
-    "splunk",
+    "revit",
+    "autocad",
+    "navisworks",
+    "sharepoint",
+    "projectwise",
     "product fact",
     "supported",
     "limit",
     "version",
 )
 SEARCH_COMPONENT_HINTS: dict[str, tuple[str, ...]] = {
-    "vulnerability_management_detection_response": ("vulnerability finding", "risk prioritization", "continuous monitoring", "threat protection"),
-    "patch_management": ("patch deployment", "patch schedule", "missing patch", "patch rollout"),
-    "cybersecurity_asset_management": ("asset inventory", "asset discovery", "asset visibility", "cmdb sync"),
-    "policy_compliance": ("compliance posture", "benchmark compliance", "policy audit", "regulatory compliance"),
-    "web_application_scanning": ("web application security", "authenticated scan", "api security testing", "owasp"),
-    "totalcloud": ("cloud security posture", "cloud workload protection", "container security", "iac security"),
-    "multi_vector_edr": ("endpoint telemetry", "endpoint threat detection", "threat hunting", "host isolation"),
-    "file_integrity_monitoring": ("file change monitoring", "registry monitoring", "baseline drift", "integrity alert"),
-    "security_assessment_questionnaire": ("third-party risk", "vendor risk", "security questionnaire", "vendor assessment"),
-    "custom_assessment_and_remediation": ("custom assessment", "custom remediation", "custom detection", "automated remediation"),
+    "revu_pdf_markup": ("pdf markup", "tool chest", "profiles", "flatten", "ocr"),
+    "studio_collaboration": ("studio session", "studio project", "session markups", "permissions", "sync"),
+    "bluebeam_web_mobile": ("bluebeam on web", "bluebeam on mobile", "browser", "mobile app", "my workspace"),
+    "subscription_licensing": ("bluebeam id", "bbid", "subscription", "license", "activation"),
+    "installation_updates": ("install", "update", "deployment", "compatibility", "end of life"),
+    "measurements_takeoffs": ("measurement", "takeoff", "calibration", "scale", "quantity link"),
+    "document_management_sets": ("sets", "slip sheet", "compare documents", "overlay pages", "page labels"),
+    "integrations_plugins": ("revit", "autocad", "navisworks", "sharepoint", "projectwise"),
 }
 SEARCH_SYMPTOM_PATTERNS = (
     "not checking in",
@@ -634,37 +632,43 @@ class RealtimeCallRequest(BaseModel):
 def _build_system_message() -> str:
     sections = [
         f"You are {ASSISTANT_NAME}, the support assistant for {SUPPORT_PRODUCT}.",
+        f"The client website is {SUPPORT_CLIENT_URL}. Use it as the business identity anchor, but do not browse unless a configured tool provides grounded support content.",
         (
-            "Sound like a deeply technical Qualys expert who talks in a casual, calm, natural way with a warm, soft, sweet feminine tone. "
+            "Sound like a deeply technical Bluebeam expert who talks in a casual, calm, natural way with a warm, soft, sweet feminine tone. "
             "Do not sound corporate, polished, scripted, or overly professional. "
             "Sound clear, sharp, relaxed, gentle, and easy to talk to."
         ),
         (
-            "On the first greeting, be clear that you are the support assistant for Qualys. "
+            "Always use search tool for technical questions about Bluebeam products, features, troubleshooting steps, error-code meaning, API details, integration details, or product-specific facts. "
+            "Never answer those questions from your own knowledge, even if you are confident. "
+            "Sound clear, sharp, relaxed, gentle, and easy to talk to."
+        ),
+        (
+            "On the first greeting, be clear that you are the support assistant for Bluebeam. "
             "After that, talk like a real troubleshooting expert. Use short spoken sentences, normal support language, "
-            "and natural phrases like 'okay, that helps', 'let's check that next', or 'that points more toward the connector side'."
+            "and natural phrases like 'okay, that helps', 'let's check that next', or 'that points more toward Studio sync'."
         ),
         (
             "Always begin each meaningful troubleshooting reply with a short summary of what you understood. "
-            "Then translate the issue into the right Qualys product area in plain language, for example "
-            "'This sounds like a VMDR detection issue' or 'This sounds more like a ServiceNow connector issue'."
+            "Then translate the issue into the right Bluebeam product area in plain language, for example "
+            "'This sounds like a Studio Session sync issue' or 'This sounds more like a Revu licensing issue'."
         ),
         (
-            "You help with Qualys support topics such as VMDR, Patch Management, CSAM, Policy Compliance, WAS, TotalCloud, "
-            "Multi-Vector EDR, FIM, SAQ, CAR, and directly related APIs, connectors, and integrations. "
-            "If the caller describes something informally, rephrase it into proper Qualys terminology before troubleshooting."
+            "You help with Bluebeam support topics such as Revu, Studio Sessions, Studio Projects, Bluebeam on web and mobile, "
+            "Bluebeam ID, subscriptions, licensing, installation, updates, markups, measurements, takeoffs, Sets, PDFs, plugins, APIs, and integrations. "
+            "If the caller describes something informally, rephrase it into proper Bluebeam terminology before troubleshooting."
         ),
         (
-            "Stay strictly inside Qualys support and directly related Qualys integrations. "
+            "Stay strictly inside Bluebeam support and directly related Bluebeam integrations. "
             "Do not answer general knowledge, news, weather, sports, entertainment, unrelated coding, personal questions, roleplay, or open-world chat."
         ),
         (
             "Be friendly, sweet, and casual, but not silly. Do not flirt, do not sound seductive, do not use sexual language, and do not get distracted by banter. "
-            "Keep the conversation focused on solving the Qualys issue."
+            "Keep the conversation focused on solving the Bluebeam issue."
         ),
         (
-            "If the caller asks something off-topic, refuse briefly in a natural way and pull the conversation back to Qualys support, "
-            "for example: 'I can only help with Qualys issues. If something in Qualys is failing, tell me what's happening.'"
+            "If the caller asks something off-topic, refuse briefly in a natural way and pull the conversation back to Bluebeam support, "
+            "for example: 'I can only help with Bluebeam issues. If something in Bluebeam is failing, tell me what's happening.'"
         ),
         (
             "Default style: technical expert first, casual tone second. Explain hard things simply without sounding textbook or formal. "
@@ -703,7 +707,7 @@ def _build_system_message() -> str:
         ),
         (
             "Before checking the knowledge base, say one short casual transition so there is no dead pause, such as "
-            "'Okay, this sounds like the connector side, let me quickly check the exact path.'"
+            "'Okay, this sounds like the Studio side, let me quickly check the exact path.'"
         ),
         (
             "If you find guidance in the knowledge base, say that briefly and then explain it naturally in plain human language. "
@@ -715,10 +719,10 @@ def _build_system_message() -> str:
             "If the caller interrupts you, briefly acknowledge it, answer the caller's new words first, and continue the previous point only if it is still relevant."
         ),
         (
-            "If a tool is unavailable, stay within Qualys support scope. Do not switch into general knowledge mode."
+            "If a tool is unavailable, stay within Bluebeam support scope. Do not switch into general knowledge mode."
         ),
         (
-            "Use the call memory tools throughout the conversation. Record important caller facts, tried steps, and your current Qualys issue framing "
+            "Use the call memory tools throughout the conversation. Record important caller facts, tried steps, and your current Bluebeam issue framing "
             "with `remember_call_context`. If you need a refresh before suggesting the next step, use `get_call_context`."
         ),
     ]
@@ -732,18 +736,50 @@ SYSTEM_MESSAGE = _build_system_message()
 
 def _build_transcription_prompt() -> str:
     return (
-        "Desktop voice support session about Qualys. Expect terms like Qualys, VMDR, Patch Management, CSAM, "
-        "Policy Compliance, WAS, TotalCloud, EDR, FIM, SAQ, CAR, ServiceNow, Jira, Splunk, SIEM, API, connector, "
-        "vulnerability, patching, compliance, cloud posture, asset inventory, and common Indian English support phrasing."
+        "Desktop voice support session about Bluebeam. Expect terms like Bluebeam, Revu, Studio Sessions, Studio Projects, "
+        "Bluebeam on web and mobile, Bluebeam Cloud, Bluebeam ID, BBID, subscriptions, licensing, Revit, AutoCAD, Navisworks, "
+        "SharePoint, ProjectWise, PDF, markup, measurements, takeoffs, Tool Chest, Sets, API, connector, integration, "
+        "and common Indian English support phrasing."
     )
 
 
 def _build_initial_greeting_line() -> str:
-    opener = secrets.choice(QUALYS_DYNAMIC_OPENERS)
+    opener = secrets.choice(BLUEBEAM_DYNAMIC_OPENERS)
     return (
         f"Hi, I'm {ASSISTANT_NAME} from {SUPPORT_PRODUCT} support. "
         f"What can I help you with in {SUPPORT_PRODUCT} today? {opener}"
     )
+
+
+def _build_turn_detection_config() -> dict[str, Any]:
+    if REALTIME_TURN_DETECTION_TYPE == "semantic_vad":
+        eagerness = SEMANTIC_VAD_EAGERNESS if SEMANTIC_VAD_EAGERNESS in {"low", "medium", "high", "auto"} else "low"
+        return {
+            "type": "semantic_vad",
+            "eagerness": eagerness,
+            "create_response": False,
+            "interrupt_response": True,
+        }
+
+    return {
+        "type": "server_vad",
+        "create_response": False,
+        "interrupt_response": True,
+        "threshold": SERVER_VAD_THRESHOLD,
+        "prefix_padding_ms": SERVER_VAD_PREFIX_PADDING_MS,
+        "silence_duration_ms": SERVER_VAD_SILENCE_DURATION_MS,
+    }
+
+
+def _build_browser_mic_constraints() -> dict[str, Any]:
+    return {
+        "echoCancellation": True,
+        "noiseSuppression": True,
+        "autoGainControl": True,
+        "channelCount": 1,
+        "sampleRate": {"ideal": 48000},
+        "sampleSize": {"ideal": 16},
+    }
 
 
 def _build_realtime_tools() -> list[dict[str, Any]]:
@@ -753,7 +789,7 @@ def _build_realtime_tools() -> list[dict[str, Any]]:
             "name": "remember_call_context",
             "description": (
                 "Store important call details so the assistant can remember the caller's issue, product area, tried steps, "
-                "and Qualys terminology across the rest of the conversation."
+                "and Bluebeam terminology across the rest of the conversation."
             ),
             "parameters": {
                 "type": "object",
@@ -787,9 +823,9 @@ def _build_realtime_tools() -> list[dict[str, Any]]:
         tools.append(
             {
                 "type": "function",
-                "name": "search_qualys_support_knowledge",
+                "name": "search_bluebeam_support_knowledge",
                 "description": (
-                    "Search SearchUnify or another configured support knowledge source for Qualys-specific troubleshooting steps, "
+                    "Search SearchUnify or another configured support knowledge source for Bluebeam-specific troubleshooting steps, "
                     "terminology, error explanations, APIs, connector guidance, or integration help. Use this when you need exact grounded guidance, "
                     "when the caller wants product-specific facts or exact steps, or when you are uncertain and need to verify the correct path."
                 ),
@@ -798,11 +834,11 @@ def _build_realtime_tools() -> list[dict[str, Any]]:
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The user's issue in natural language, rewritten with the important Qualys terms preserved.",
+                            "description": "The user's issue in natural language, rewritten with the important Bluebeam terms preserved.",
                         },
                         "product_area": {
                             "type": "string",
-                            "description": "Optional Qualys area such as VMDR, Patch Management, CSAM, Policy Compliance, WAS, TotalCloud, EDR, FIM, SAQ, or CAR.",
+                            "description": "Optional Bluebeam area such as Revu, Studio, Bluebeam on web and mobile, Bluebeam ID, subscriptions, licensing, measurements, Sets, plugins, or integrations.",
                         },
                     },
                     "required": ["query"],
@@ -828,14 +864,7 @@ def _build_browser_session_config() -> dict[str, Any]:
                     "prompt": _build_transcription_prompt(),
                 },
                 "noise_reduction": {"type": TRANSCRIPTION_NOISE_REDUCTION},
-                "turn_detection": {
-                    "type": "server_vad",
-                    "create_response": True,
-                    "interrupt_response": True,
-                    "threshold": SERVER_VAD_THRESHOLD,
-                    "prefix_padding_ms": SERVER_VAD_PREFIX_PADDING_MS,
-                    "silence_duration_ms": SERVER_VAD_SILENCE_DURATION_MS,
-                },
+                "turn_detection": _build_turn_detection_config(),
             },
             "output": {"voice": VOICE},
         },
@@ -846,7 +875,7 @@ def _build_browser_session_config() -> dict[str, Any]:
 
 
 def _encode_multipart_form_data(fields: dict[str, str]) -> tuple[str, bytes]:
-    boundary = f"----QualysRealtimeBoundary{uuid.uuid4().hex}"
+    boundary = f"----BluebeamRealtimeBoundary{uuid.uuid4().hex}"
     chunks: list[bytes] = []
     for name, value in fields.items():
         chunks.extend(
@@ -938,11 +967,11 @@ def _detect_off_topic(text: str, routed_family: str, integration_targets: list[s
         return False, ""
     if routed_family != "general" or integration_targets:
         return False, ""
-    if any(hint in lowered for hint in QUALYS_DOMAIN_HINTS):
+    if any(hint in lowered for hint in BLUEBEAM_DOMAIN_HINTS):
         return False, ""
     matched = [pattern for pattern in OFF_TOPIC_PATTERNS if pattern in lowered]
     if matched:
-        return True, f"Detected non-Qualys topic: {matched[0]}"
+        return True, f"Detected non-Bluebeam topic: {matched[0]}"
     return False, ""
 
 
@@ -950,7 +979,7 @@ def _build_call_context_hint(call_state: CallState) -> str:
     if call_state.off_topic_detected:
         return (
             "Guardrail reminder: the caller's latest request is off-topic. "
-            "Do not answer it. Refuse briefly, say you only handle Qualys issues and integrations, and ask the caller to describe the Qualys problem instead."
+            "Do not answer it. Refuse briefly, say you only handle Bluebeam issues and integrations, and ask the caller to describe the Bluebeam problem instead."
         )
     segments = [
         f"Live call context update: the caller currently sounds like they have {call_state.routed_issue_label}.",
@@ -961,7 +990,7 @@ def _build_call_context_hint(call_state: CallState) -> str:
         segments.append(f"Integration targets mentioned: {', '.join(call_state.integration_targets)}.")
     if call_state.frustration_level == "high":
         segments.append("Caller sounds frustrated. Acknowledge that first, then offer one short next step.")
-    segments.append("On your next response, summarize first and then state the Qualys terminology clearly.")
+    segments.append("On your next response, summarize first and then state the Bluebeam terminology clearly.")
     return " ".join(segments)
 
 
@@ -1002,7 +1031,12 @@ def _knowledge_backend_enabled() -> bool:
 
 
 def _clean_searchunify_highlight(value: str) -> str:
-    return value.replace(SEARCHUNIFY_HIGHLIGHT_START, "").replace(SEARCHUNIFY_HIGHLIGHT_END, "")
+    cleaned = value.replace(SEARCHUNIFY_HIGHLIGHT_START, "").replace(SEARCHUNIFY_HIGHLIGHT_END, "")
+    cleaned = re.sub(r"</?span(?:\s+[^>]*)?>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<span[^>]*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<[^>]+>", "", cleaned)
+    cleaned = html.unescape(cleaned)
+    return " ".join(cleaned.split())
 
 
 def _knowledge_backend_kind() -> str:
@@ -1153,7 +1187,7 @@ def _build_searchunify_headers() -> dict[str, str]:
         "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
         "Accept-Language": "en-US,en;q=0.9",
-        "User-Agent": "SearchUnifyQualysWebRTCDemo/1.0",
+        "User-Agent": "SearchUnifyBluebeamWebRTCDemo/1.0",
     }
     if SEARCHUNIFY_ORIGIN:
         headers["Origin"] = SEARCHUNIFY_ORIGIN
@@ -1192,6 +1226,56 @@ def _flatten_searchunify_highlights(value: Any) -> list[str]:
     return values
 
 
+def _first_searchunify_highlight_value(hit: dict[str, Any], keys: tuple[str, ...]) -> str:
+    highlight = hit.get("highlight")
+    if not isinstance(highlight, dict):
+        return ""
+    for key in keys:
+        value = highlight.get(key)
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    return _clean_searchunify_highlight(item)
+        if isinstance(value, str) and value.strip():
+            return _clean_searchunify_highlight(value)
+    return ""
+
+
+def _searchunify_metadata_values(hit: dict[str, Any], metadata_key: str) -> list[str]:
+    values: list[str] = []
+    highlight = hit.get("highlight")
+    if isinstance(highlight, dict):
+        highlighted = highlight.get(metadata_key)
+        if isinstance(highlighted, list):
+            values.extend(str(item).strip() for item in highlighted if str(item).strip())
+        elif isinstance(highlighted, str) and highlighted.strip():
+            values.append(highlighted.strip())
+
+    metadata = hit.get("metadata")
+    if isinstance(metadata, list):
+        for item in metadata:
+            if not isinstance(item, dict) or str(item.get("key") or "").strip().lower() != metadata_key.lower():
+                continue
+            raw_value = item.get("value")
+            if isinstance(raw_value, list):
+                values.extend(str(value).strip() for value in raw_value if str(value).strip())
+            elif raw_value:
+                values.append(str(raw_value).strip())
+
+    return _dedupe_preserve_order(values, limit=4)
+
+
+def _searchunify_display_title(hit: dict[str, Any]) -> str:
+    title = _first_searchunify_highlight_value(hit, ("TitleToDisplayString", "TitleToDisplay"))
+    if title:
+        return title
+    for key in ("title", "name", "heading", "objLabel", "objName"):
+        value = str(hit.get(key) or "").strip()
+        if value:
+            return _clean_searchunify_highlight(value)
+    return "SearchUnify result"
+
+
 def _dedupe_preserve_order(values: list[str], limit: int = 3) -> list[str]:
     deduped: list[str] = []
     seen: set[str] = set()
@@ -1213,7 +1297,20 @@ def _coerce_bool(value: Any) -> bool:
 
 
 def _extract_searchunify_snippet(hit: dict[str, Any]) -> str:
-    highlight_parts = _dedupe_preserve_order(_flatten_searchunify_highlights(hit.get("highlight")), limit=2)
+    summary = _first_searchunify_highlight_value(hit, ("SummaryToDisplay",))
+    if summary:
+        return summary[:1200]
+
+    highlight = hit.get("highlight")
+    highlight_parts: list[str] = []
+    if isinstance(highlight, dict):
+        for key, value in highlight.items():
+            if "title" in key.lower() or key in {"Categories", "Solutions"}:
+                continue
+            highlight_parts.extend(_flatten_searchunify_highlights(value))
+    else:
+        highlight_parts.extend(_flatten_searchunify_highlights(highlight))
+    highlight_parts = _dedupe_preserve_order(highlight_parts, limit=2)
     if highlight_parts:
         return " … ".join(highlight_parts)[:1200]
     for key in ("snippet", "summary", "description", "text", "body"):
@@ -1330,10 +1427,12 @@ def _normalize_searchunify_results(payload: dict[str, Any], query: str, product_
     for hit in hits[: max(SEARCHUNIFY_RESULTS_PER_PAGE, KNOWLEDGE_RESULT_LIMIT)]:
         if not isinstance(hit, dict):
             continue
-        title = str(hit.get("objName") or hit.get("title") or "SearchUnify result").strip()
+        title = _searchunify_display_title(hit)
         snippet = _extract_searchunify_snippet(hit)
         url = str(hit.get("href") or hit.get("clientHref") or "").strip()
         source_name = str(hit.get("sourceLabel") or hit.get("sourceName") or "SearchUnify").strip()
+        categories = _searchunify_metadata_values(hit, "Categories")
+        solutions = _searchunify_metadata_values(hit, "Solutions")
         indexed_date = str(hit.get("indexedDate") or "").strip()
         solved = _coerce_bool(hit.get("solved"))
         try:
@@ -1360,6 +1459,8 @@ def _normalize_searchunify_results(payload: dict[str, Any], query: str, product_
                 "source_label": str(hit.get("sourceLabel") or "").strip(),
                 "client_url": str(hit.get("clientHref") or "").strip(),
                 "content_tag": str(hit.get("contentTag") or "").strip(),
+                "categories": categories,
+                "solutions": solutions,
                 "indexed_date": indexed_date,
                 "solved": solved,
                 "confidence": round(min(0.99, 0.2 + (score / 18)), 2),
@@ -1369,6 +1470,37 @@ def _normalize_searchunify_results(payload: dict[str, Any], query: str, product_
         )
     normalized.sort(key=lambda item: item.get("score", 0), reverse=True)
     return normalized[:KNOWLEDGE_RESULT_LIMIT]
+
+
+def _format_grounding_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    formatted: list[dict[str, Any]] = []
+    for index, result in enumerate(results, start=1):
+        categories = result.get("categories") if isinstance(result.get("categories"), list) else []
+        solutions = result.get("solutions") if isinstance(result.get("solutions"), list) else []
+        formatted.append(
+            {
+                "rank": index,
+                "title": result.get("title") or "Support result",
+                "summary": result.get("snippet") or "",
+                "url": result.get("url") or "",
+                "source": result.get("source_label") or result.get("source_name") or "",
+                "category": ", ".join(str(item) for item in categories if str(item).strip()),
+                "solution": ", ".join(str(item) for item in solutions if str(item).strip()),
+                "confidence": result.get("confidence"),
+            }
+        )
+    return formatted
+
+
+def _build_answer_context(results: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for item in _format_grounding_results(results):
+        detail_parts = [str(part) for part in (item.get("solution"), item.get("category")) if part]
+        detail = f" ({'; '.join(detail_parts)})" if detail_parts else ""
+        lines.append(
+            f"{item['rank']}. {item['title']}{detail}: {item['summary']} Source: {item['url']}"
+        )
+    return "\n".join(lines)
 
 
 def _detect_result_conflict(results: list[dict[str, Any]]) -> tuple[bool, str]:
@@ -1412,6 +1544,8 @@ def _build_grounding_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
         "conflict": conflict,
         "conflict_summary": conflict_summary,
         "response_mode": response_mode,
+        "formatted_results": _format_grounding_results(results),
+        "answer_context": _build_answer_context(results),
     }
 
 
@@ -1606,7 +1740,7 @@ def _demo_ready(checks: list[dict[str, Any]]) -> bool:
     return all(check["ok"] for check in checks if check.get("severity") != "warning")
 
 
-app = FastAPI(title="Qualys WebRTC Voice Demo")
+app = FastAPI(title="Bluebeam WebRTC Voice Demo")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.mount("/socket/static", StaticFiles(directory=STATIC_DIR), name="legacy-static")
@@ -1624,10 +1758,14 @@ async def _log_startup_configuration() -> None:
         _knowledge_backend_kind() if _knowledge_backend_enabled() else "",
     )
     logger.info(
-        "Realtime browser config vad_threshold=%.2f vad_prefix_padding_ms=%s vad_silence_ms=%s ai_speaks_first=%s",
+        "Realtime browser config turn_detection=%s semantic_eagerness=%s vad_threshold=%.2f vad_prefix_padding_ms=%s vad_silence_ms=%s noise_reduction=%s interrupt_debounce_ms=%s ai_speaks_first=%s",
+        REALTIME_TURN_DETECTION_TYPE,
+        SEMANTIC_VAD_EAGERNESS,
         SERVER_VAD_THRESHOLD,
         SERVER_VAD_PREFIX_PADDING_MS,
         SERVER_VAD_SILENCE_DURATION_MS,
+        TRANSCRIPTION_NOISE_REDUCTION,
+        INTERRUPT_DEBOUNCE_MS,
         AI_SPEAKS_FIRST,
     )
 
@@ -1646,12 +1784,16 @@ async def health():
         "ok": True,
         "app_flow_version": APP_FLOW_VERSION,
         "frontend_mode": "browser-webrtc-backend-signaled",
-        "public_url": PUBLIC_URL,
         "model": OPENAI_MODEL,
         "voice": VOICE,
         "assistant_name": ASSISTANT_NAME,
         "support_product": SUPPORT_PRODUCT,
+        "support_client_url": SUPPORT_CLIENT_URL,
         "transcription_model": TRANSCRIPTION_MODEL,
+        "transcription_noise_reduction": TRANSCRIPTION_NOISE_REDUCTION,
+        "turn_detection": _build_turn_detection_config(),
+        "interrupt_debounce_ms": INTERRUPT_DEBOUNCE_MS,
+        "mic_audio_constraints": _build_browser_mic_constraints(),
         "knowledge_backend_enabled": _knowledge_backend_enabled(),
         "knowledge_backend_name": KNOWLEDGE_BACKEND_NAME,
         "knowledge_backend_kind": _knowledge_backend_kind() if _knowledge_backend_enabled() else "",
@@ -1670,16 +1812,18 @@ async def realtime_config():
     return {
         "app_flow_version": APP_FLOW_VERSION,
         "mode": "browser-webrtc-backend-signaled",
-        "public_url": PUBLIC_URL,
         "model": OPENAI_MODEL,
         "voice": VOICE,
         "assistant_name": ASSISTANT_NAME,
         "support_product": SUPPORT_PRODUCT,
+        "support_client_url": SUPPORT_CLIENT_URL,
+        "turn_detection": _build_turn_detection_config(),
+        "interrupt_debounce_ms": INTERRUPT_DEBOUNCE_MS,
+        "mic_audio_constraints": _build_browser_mic_constraints(),
         "knowledge_backend_name": KNOWLEDGE_BACKEND_NAME if _knowledge_backend_enabled() else "",
         "knowledge_backend_enabled": _knowledge_backend_enabled(),
         "ai_speaks_first": AI_SPEAKS_FIRST,
         "initial_greeting": _build_initial_greeting_line(),
-        "session": _build_browser_session_config(),
         "tool_names": [tool["name"] for tool in _build_realtime_tools()],
     }
 

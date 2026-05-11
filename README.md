@@ -1,6 +1,6 @@
-# Qualys WebRTC Voice Demo
+# Bluebeam WebRTC Voice Demo
 
-Browser-first Qualys support demo built on the OpenAI Realtime API, FastAPI, and SearchUnify grounding.
+Browser-first Bluebeam support demo built on the OpenAI Realtime API, FastAPI, and SearchUnify grounding.
 
 The old phone-call media bridge is gone. The browser now creates the WebRTC peer connection locally, while the FastAPI app handles the authenticated OpenAI call setup and serves:
 
@@ -14,7 +14,7 @@ The old phone-call media bridge is gone. The browser now creates the WebRTC peer
 
 - opens a browser WebRTC session with backend-mediated OpenAI call setup
 - keeps the conversation voice-first with live caller and assistant transcript panels
-- preserves Qualys support context across turns with backend memory tools
+- preserves Bluebeam support context across turns with backend memory tools
 - grounds exact troubleshooting, error details, API facts, and integration questions with SearchUnify when the model decides it needs them
 - exposes a polished desktop-first demo interface instead of a phone-call flow
 
@@ -72,7 +72,8 @@ OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-realtime
 VOICE=alloy
 ASSISTANT_NAME=Aira
-SUPPORT_PRODUCT=Qualys
+SUPPORT_PRODUCT=Bluebeam
+SUPPORT_CLIENT_URL=https://www.bluebeam.com/
 ```
 
 Common UI and session settings:
@@ -84,9 +85,12 @@ AI_SPEAKS_FIRST=true
 TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 TRANSCRIPTION_LANGUAGE=en
 TRANSCRIPTION_NOISE_REDUCTION=near_field
-SERVER_VAD_THRESHOLD=0.62
-SERVER_VAD_PREFIX_PADDING_MS=300
-SERVER_VAD_SILENCE_DURATION_MS=450
+INTERRUPT_DEBOUNCE_MS=180
+REALTIME_TURN_DETECTION_TYPE=semantic_vad
+SEMANTIC_VAD_EAGERNESS=low
+SERVER_VAD_THRESHOLD=0.72
+SERVER_VAD_PREFIX_PADDING_MS=500
+SERVER_VAD_SILENCE_DURATION_MS=650
 ```
 
 SearchUnify grounding:
@@ -111,8 +115,8 @@ KNOWLEDGE_RESULT_LIMIT=5
 KNOWLEDGE_CACHE_TTL_S=180
 KNOWLEDGE_BACKEND_TIMEOUT_S=8
 KNOWLEDGE_BACKEND_SSL_INSECURE=true
-DEMO_LOOKUP_QUERY=qualys vulnerability findings are not updating
-DEMO_LOOKUP_PRODUCT_AREA=vulnerability management detection response
+DEMO_LOOKUP_QUERY=Bluebeam Studio Session markups are not syncing
+DEMO_LOOKUP_PRODUCT_AREA=studio collaboration
 LOG_LEVEL=info
 ```
 
